@@ -1,80 +1,521 @@
-import { Atom, BarChart3, CalendarDays, ChevronRight, ClipboardCheck, FlaskConical, Gauge, LayoutDashboard, Plus, Search, Settings2 } from 'lucide-react';
+'use client';
+
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  Atom,
+  BarChart3,
+  Bot,
+  CalendarDays,
+  ChevronRight,
+  ClipboardCheck,
+  FlaskConical,
+  FolderKanban,
+  Plus,
+  Search,
+  Send,
+  Settings2,
+  Sparkles,
+} from 'lucide-react';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
-const navItems = [
-  { label: '대시보드', icon: LayoutDashboard, active: true },
-  { label: '실험 프로토콜', icon: FlaskConical },
-  { label: '연구 일정', icon: CalendarDays },
-  { label: '데이터 분석', icon: BarChart3 },
-  { label: '재현성 검사', icon: ClipboardCheck },
+type Project = {
+  id: string;
+  title: string;
+  topic: string;
+  field: string;
+  status: '계획 중' | '진행 중' | '완료';
+  start_date: string | null;
+  due_date: string | null;
+  progress: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type View = 'projects' | 'protocol' | 'schedule' | 'analysis' | 'reproducibility';
+
+const navItems: { id: View; label: string; icon: typeof FolderKanban }[] = [
+  { id: 'projects', label: '나의 연구', icon: FolderKanban },
+  { id: 'protocol', label: '실험 프로토콜', icon: FlaskConical },
+  { id: 'schedule', label: '연구 일정', icon: CalendarDays },
+  { id: 'analysis', label: '데이터 분석', icon: BarChart3 },
+  { id: 'reproducibility', label: '재현성 에이전트', icon: ClipboardCheck },
 ];
-const steps = [
-  { title: '장치 구성', detail: '스탠드에 실을 고정하고 추를 연결', status: '완료' },
-  { title: '길이 측정', detail: '회전축부터 추의 질량중심까지 측정', status: '완료' },
-  { title: '주기 측정', detail: '10회 왕복 시간을 5번 반복 측정', status: '진행 중' },
-  { title: '결과 분석', detail: '중력가속도와 불확도 계산', status: '예정' },
-];
-const measurements = [['1회', '20.12 s', '2.012 s'], ['2회', '20.06 s', '2.006 s'], ['3회', '20.18 s', '2.018 s']];
+
+const fieldStyles: Record<string, string> = {
+  물리: 'bg-cyan-100 text-cyan-800',
+  화학: 'bg-violet-100 text-violet-800',
+  생명과학: 'bg-emerald-100 text-emerald-800',
+  지구과학: 'bg-amber-100 text-amber-800',
+  정보과학: 'bg-blue-100 text-blue-800',
+  융합: 'bg-rose-100 text-rose-800',
+  기타: 'bg-slate-100 text-slate-700',
+};
+
+function formatDate(value: string | null) {
+  if (!value) return '일정 미정';
+  return new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric' }).format(new Date(value));
+}
 
 export default function Home() {
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col">
-        <div className="flex h-20 items-center gap-3 px-7">
-          <div className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Atom className="size-5" /></div>
-          <div><p className="text-lg font-bold tracking-tight">LabFlow</p><p className="text-xs text-muted-foreground">Research workspace</p></div>
-        </div>
-        <nav className="space-y-1 px-4 pt-5" aria-label="주요 메뉴">
-          {navItems.map(({ label, icon: Icon, active }) => (
-            <a key={label} href="#" className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
-              <Icon className="size-4" />{label}
-            </a>
-          ))}
-        </nav>
-        <div className="mt-auto p-4">
-          <div className="rounded-2xl border border-sidebar-border bg-background/70 p-4">
-            <div className="mb-3 flex items-center justify-between"><span className="text-xs font-semibold">프로젝트 진행률</span><Gauge className="size-4 text-primary" /></div>
-            <Progress value={38} className="gap-2"><ProgressLabel className="text-xs text-muted-foreground">단진자 운동 분석</ProgressLabel><ProgressValue className="text-xs" /></Progress>
-          </div>
-          <Button variant="ghost" className="mt-3 w-full justify-start text-muted-foreground"><Settings2 /> 설정</Button>
-        </div>
-      </aside>
+  const [view, setView] = useState<View>('projects');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+  const [tableMissing, setTableMissing] = useState(false);
 
-      <section className="lg:pl-64">
-        <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b bg-background/90 px-5 backdrop-blur md:px-9">
-          <div className="flex items-center gap-3 lg:hidden"><div className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground"><Atom className="size-5" /></div><span className="font-bold">LabFlow</span></div>
-          <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex"><span>내 연구</span><ChevronRight className="size-4" /><span className="font-medium text-foreground">단진자 운동 분석</span></div>
-          <div className="flex items-center gap-2"><Button variant="outline" size="icon" aria-label="검색"><Search /></Button><Button><Plus /> 새 실험</Button></div>
+  async function loadProjects() {
+    if (!isSupabaseConfigured) {
+      setNotice('Supabase 연결 정보가 설정되지 않았습니다.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      setTableMissing(error.code === 'PGRST205' || error.message.includes('projects'));
+      setNotice('Supabase에 projects 테이블을 만든 뒤 연구 기록을 저장할 수 있습니다.');
+    } else {
+      setProjects((data ?? []) as Project[]);
+      setTableMissing(false);
+      setNotice(null);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    void loadProjects();
+  }, []);
+
+  async function createProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    setNotice(null);
+
+    const payload = {
+      title: String(form.get('title') ?? '').trim(),
+      topic: String(form.get('topic') ?? '').trim(),
+      field: String(form.get('field') ?? '기타'),
+      status: '계획 중',
+      start_date: form.get('start_date') || null,
+      due_date: form.get('due_date') || null,
+      progress: 0,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('projects').insert(payload).select().single();
+    if (error) {
+      setNotice(tableMissing ? '먼저 Supabase SQL Editor에서 projects 테이블을 만들어 주세요.' : `저장하지 못했습니다: ${error.message}`);
+    } else {
+      const created = data as Project;
+      setProjects((current) => [created, ...current]);
+      setSelectedProject(created);
+      setDialogOpen(false);
+      setNotice('새 연구 프로젝트를 저장했습니다.');
+      event.currentTarget.reset();
+    }
+    setSaving(false);
+  }
+
+  const filteredProjects = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return projects;
+    return projects.filter((project) =>
+      [project.title, project.topic, project.field].some((value) => value.toLowerCase().includes(needle)),
+    );
+  }, [projects, query]);
+
+  const activeProjects = projects.filter((project) => project.status !== '완료').length;
+  const completedProjects = projects.filter((project) => project.status === '완료').length;
+
+  function navigate(next: View) {
+    setView(next);
+    if (next === 'projects') setSelectedProject(null);
+  }
+
+  return (
+    <SidebarProvider defaultOpen>
+      <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+        <SidebarHeader className="h-20 justify-center border-b border-sidebar-border px-3">
+          <div className="flex items-center gap-3 overflow-hidden px-1">
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+              <Atom className="size-5" />
+            </div>
+            <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+              <p className="font-bold tracking-tight">LabFlow</p>
+              <p className="truncate text-xs text-muted-foreground">Research workspace</p>
+            </div>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>연구 워크스페이스</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {navItems.map(({ id, label, icon: Icon }) => (
+                  <SidebarMenuItem key={id}>
+                    <SidebarMenuButton
+                      isActive={view === id}
+                      tooltip={label}
+                      onClick={() => navigate(id)}
+                      className="h-10"
+                    >
+                      <Icon />
+                      <span>{label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="설정" className="h-10">
+                <Settings2 /><span>설정</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+        <SidebarRail />
+      </Sidebar>
+
+      <SidebarInset className="min-w-0 bg-background">
+        <header className="sticky top-0 z-20 flex h-20 items-center gap-3 border-b bg-background/90 px-4 backdrop-blur md:px-8">
+          <SidebarTrigger aria-label="사이드바 접기 또는 펼치기" />
+          <div className="h-5 w-px bg-border" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">
+              {view === 'projects' ? '나의 연구' : navItems.find((item) => item.id === view)?.label}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {selectedProject?.title ?? '연구 기록을 한곳에서 관리하세요'}
+            </p>
+          </div>
+          <NewProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} onSubmit={createProject} saving={saving} />
         </header>
 
-        <div className="mx-auto max-w-[1440px] px-5 py-8 md:px-9 md:py-10">
-          <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
-            <div><div className="mb-3 flex items-center gap-2"><Badge className="bg-cyan-100 text-cyan-800">물리</Badge><Badge variant="outline">진행 중</Badge></div><h1 className="text-3xl font-bold tracking-tight md:text-4xl">단진자 운동으로 중력가속도 측정</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">진자의 길이와 주기를 반복 측정하고, 중력가속도와 측정 불확도를 계산합니다.</p></div>
-            <p className="text-sm text-muted-foreground">마지막 수정 · 오늘 15:42</p>
-          </div>
+        {view === 'projects' ? (
+          <ProjectsView
+            projects={filteredProjects}
+            allProjects={projects}
+            loading={loading}
+            query={query}
+            setQuery={setQuery}
+            activeProjects={activeProjects}
+            completedProjects={completedProjects}
+            notice={notice}
+            tableMissing={tableMissing}
+            onRetry={loadProjects}
+            onCreate={() => setDialogOpen(true)}
+            onSelect={(project) => {
+              setSelectedProject(project);
+              setView('protocol');
+            }}
+          />
+        ) : (
+          <WorkspaceView view={view} project={selectedProject ?? projects[0] ?? null} onBack={() => navigate('projects')} />
+        )}
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
 
-          <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
-            <section className="rounded-2xl border bg-card p-5 shadow-sm md:p-7">
-              <div className="mb-6 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-primary">Protocol</p><h2 className="mt-1 text-xl font-bold">실험 프로토콜</h2></div><Button variant="outline" size="sm">전체 보기</Button></div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {steps.map((step, index) => <article key={step.title} className="group rounded-xl border bg-background p-4 transition-colors hover:border-primary/40"><div className="mb-5 flex items-start justify-between"><span className="grid size-8 place-items-center rounded-lg bg-secondary font-mono text-sm font-bold text-primary">{String(index + 1).padStart(2, '0')}</span><Badge variant={step.status === '진행 중' ? 'default' : 'secondary'}>{step.status}</Badge></div><h3 className="font-semibold">{step.title}</h3><p className="mt-1 text-sm text-muted-foreground">{step.detail}</p></article>)}
-              </div>
-            </section>
-            <aside className="rounded-2xl bg-primary p-6 text-primary-foreground shadow-sm md:p-7">
-              <p className="text-xs font-semibold uppercase tracking-[.16em] text-primary-foreground/60">Next schedule</p>
-              <div className="mt-7 flex gap-5"><div className="text-center"><p className="text-xs text-primary-foreground/60">SEP</p><p className="text-4xl font-bold">07</p></div><div className="border-l border-primary-foreground/20 pl-5"><h2 className="text-lg font-bold">주기 반복 측정</h2><p className="mt-1 text-sm text-primary-foreground/65">물리 실험실 · 16:00</p></div></div>
-              <div className="mt-8 rounded-xl bg-primary-foreground/10 p-4 text-sm leading-6"><p className="font-semibold">준비물 확인</p><p className="mt-1 text-primary-foreground/70">스탠드, 실, 금속 추, 줄자, 광게이트 센서</p></div>
-            </aside>
+function NewProjectDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  saving,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  saving: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger render={<Button />}>
+        <Plus /> 새 프로젝트
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-xl">
+        <form onSubmit={onSubmit}>
+          <DialogHeader>
+            <DialogTitle className="text-lg">새 연구 프로젝트</DialogTitle>
+            <DialogDescription>연구의 기본 정보를 입력하세요. 나중에 실험과 기록을 추가할 수 있습니다.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-6">
+            <label className="grid gap-2 text-sm font-medium">
+              프로젝트명
+              <Input name="title" required maxLength={120} placeholder="예: 단진자 운동을 이용한 중력가속도 측정" />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              연구 주제
+              <Textarea name="topic" required placeholder="무엇을 알아보기 위한 연구인가요?" />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="grid gap-2 text-sm font-medium">
+                연구 분야
+                <Select name="field" defaultValue="물리">
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['물리', '화학', '생명과학', '지구과학', '정보과학', '융합', '기타'].map((field) => <SelectItem key={field} value={field}>{field}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="grid gap-2 text-sm font-medium">시작일<Input name="start_date" type="date" /></label>
+              <label className="grid gap-2 text-sm font-medium">마감일<Input name="due_date" type="date" /></label>
+            </div>
           </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+            <Button type="submit" disabled={saving}>{saving ? '저장 중…' : '프로젝트 저장'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-          <section className="mt-5 rounded-2xl border bg-card p-5 shadow-sm md:p-7">
-            <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-primary">Measurements</p><h2 className="mt-1 text-xl font-bold">최근 측정값</h2></div><div className="flex gap-5 text-sm"><span className="text-muted-foreground">진자 길이 <b className="ml-1 text-foreground">1.000 m</b></span><span className="text-muted-foreground">평균 주기 <b className="ml-1 text-foreground">2.012 s</b></span></div></div>
-            <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm"><thead className="border-y bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-4 py-3 font-medium">측정</th><th className="px-4 py-3 font-medium">10회 왕복 시간</th><th className="px-4 py-3 font-medium">주기</th><th className="px-4 py-3 font-medium">상태</th></tr></thead><tbody>{measurements.map((row) => <tr key={row[0]} className="border-b last:border-0"><td className="px-4 py-4 font-medium">{row[0]}</td><td className="px-4 py-4 font-mono">{row[1]}</td><td className="px-4 py-4 font-mono">{row[2]}</td><td className="px-4 py-4"><Badge variant="secondary">기록 완료</Badge></td></tr>)}</tbody></table></div>
-          </section>
+function ProjectsView({
+  projects,
+  allProjects,
+  loading,
+  query,
+  setQuery,
+  activeProjects,
+  completedProjects,
+  notice,
+  tableMissing,
+  onRetry,
+  onCreate,
+  onSelect,
+}: {
+  projects: Project[];
+  allProjects: Project[];
+  loading: boolean;
+  query: string;
+  setQuery: (value: string) => void;
+  activeProjects: number;
+  completedProjects: number;
+  notice: string | null;
+  tableMissing: boolean;
+  onRetry: () => void;
+  onCreate: () => void;
+  onSelect: (project: Project) => void;
+}) {
+  return (
+    <div className="mx-auto w-full max-w-[1440px] px-5 py-8 md:px-9 md:py-10">
+      <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+        <div>
+          <p className="mb-2 text-sm font-semibold text-primary">RESEARCH LIBRARY</p>
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">나의 연구</h1>
+          <p className="mt-2 text-base text-muted-foreground">진행 중인 프로젝트와 이전 연구 기록을 확인하세요.</p>
         </div>
+        <div className="relative w-full md:w-80">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-10 pl-9" placeholder="프로젝트 검색" aria-label="프로젝트 검색" />
+        </div>
+      </div>
+
+      {notice && (
+        <div className={`mb-6 flex flex-col justify-between gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center ${tableMissing ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-cyan-200 bg-cyan-50 text-cyan-950'}`}>
+          <span>{notice}</span>
+          {tableMissing && <Button variant="outline" size="sm" onClick={() => void onRetry()}>연결 다시 확인</Button>}
+        </div>
+      )}
+
+      <section className="mb-8 grid gap-4 sm:grid-cols-3">
+        <StatCard label="전체 프로젝트" value={allProjects.length} detail="Supabase에 저장된 연구" />
+        <StatCard label="진행 중" value={activeProjects} detail="계획 중인 연구 포함" />
+        <StatCard label="완료" value={completedProjects} detail="보관된 연구 기록" />
       </section>
-    </main>
+
+      {loading ? (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((item) => <Skeleton key={item} className="h-64 rounded-2xl" />)}
+        </div>
+      ) : projects.length > 0 ? (
+        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" aria-label="연구 프로젝트 목록">
+          {projects.map((project) => (
+            <button
+              type="button"
+              key={project.id}
+              onClick={() => onSelect(project)}
+              className="group rounded-2xl border bg-card p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <Badge className={fieldStyles[project.field] ?? fieldStyles.기타}>{project.field}</Badge>
+                <Badge variant="outline">{project.status}</Badge>
+              </div>
+              <h2 className="mt-6 line-clamp-2 text-xl font-bold leading-snug">{project.title}</h2>
+              <p className="mt-2 line-clamp-2 min-h-12 text-sm leading-6 text-muted-foreground">{project.topic || '연구 주제를 입력하지 않았습니다.'}</p>
+              <div className="mt-6">
+                <div className="mb-2 flex justify-between text-sm"><span className="text-muted-foreground">진행률</span><strong>{project.progress}%</strong></div>
+                <Progress value={project.progress} />
+              </div>
+              <div className="mt-5 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+                <span>마감 {formatDate(project.due_date)}</span>
+                <ChevronRight className="size-4 transition-transform group-hover:translate-x-1" />
+              </div>
+            </button>
+          ))}
+        </section>
+      ) : (
+        <Empty className="min-h-80 border bg-card">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FolderKanban /></EmptyMedia>
+            <EmptyTitle className="text-base">{query ? '검색 결과가 없습니다' : '첫 연구를 시작해 보세요'}</EmptyTitle>
+            <EmptyDescription>{query ? '다른 프로젝트명이나 분야를 검색해 보세요.' : '프로젝트를 만들면 일정, 실험 과정과 측정값을 함께 기록할 수 있습니다.'}</EmptyDescription>
+          </EmptyHeader>
+          {!query && !tableMissing && <EmptyContent><Button onClick={onCreate}><Plus /> 새 프로젝트 만들기</Button></EmptyContent>}
+        </Empty>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, detail }: { label: string; value: number; detail: string }) {
+  return (
+    <article className="rounded-2xl border bg-card p-5 shadow-sm">
+      <p className="text-sm font-medium text-muted-foreground">{label}</p>
+      <p className="mt-2 text-3xl font-bold tabular-nums">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </article>
+  );
+}
+
+function WorkspaceView({ view, project, onBack }: { view: View; project: Project | null; onBack: () => void }) {
+  if (!project) {
+    return (
+      <div className="grid min-h-[calc(100vh-5rem)] place-items-center p-5">
+        <Empty className="max-w-xl border bg-card">
+          <EmptyHeader><EmptyMedia variant="icon"><FolderKanban /></EmptyMedia><EmptyTitle>선택된 연구가 없습니다</EmptyTitle><EmptyDescription>먼저 연구 프로젝트를 만든 뒤 기록 기능을 사용할 수 있습니다.</EmptyDescription></EmptyHeader>
+          <EmptyContent><Button onClick={onBack}>나의 연구로 이동</Button></EmptyContent>
+        </Empty>
+      </div>
+    );
+  }
+
+  if (view === 'reproducibility') return <AgentChat project={project} onBack={onBack} />;
+
+  const content = {
+    protocol: { eyebrow: 'EXPERIMENT NOTES', title: '실험 프로토콜', body: '실험 단계를 순서대로 기록하고 각 단계의 조건과 준비물을 정리합니다.', icon: FlaskConical },
+    schedule: { eyebrow: 'SCHEDULE', title: '연구 일정', body: '실험일, 분석일과 제출 마감일을 한곳에서 관리합니다.', icon: CalendarDays },
+    analysis: { eyebrow: 'MEASUREMENTS', title: '데이터 분석', body: '반복 측정값을 입력하고 평균, 표준편차와 불확도를 계산합니다.', icon: BarChart3 },
+  }[view as Exclude<View, 'projects' | 'reproducibility'>];
+  const Icon = content.icon;
+
+  return (
+    <div className="mx-auto w-full max-w-5xl px-5 py-10 md:px-9">
+      <Button variant="ghost" onClick={onBack} className="mb-6">← 나의 연구</Button>
+      <Badge className={fieldStyles[project.field] ?? fieldStyles.기타}>{project.field}</Badge>
+      <p className="mt-8 text-sm font-semibold text-primary">{content.eyebrow}</p>
+      <h1 className="mt-2 text-3xl font-bold">{content.title}</h1>
+      <p className="mt-2 text-base text-muted-foreground">{project.title}</p>
+      <div className="mt-8 rounded-2xl border bg-card p-8 shadow-sm">
+        <div className="grid size-12 place-items-center rounded-xl bg-secondary text-primary"><Icon /></div>
+        <h2 className="mt-6 text-xl font-bold">기록 준비 완료</h2>
+        <p className="mt-2 max-w-xl leading-7 text-muted-foreground">{content.body}</p>
+        <Button className="mt-6"><Plus /> 첫 기록 추가</Button>
+      </div>
+    </div>
+  );
+}
+
+function AgentChat({ project, onBack }: { project: Project; onBack: () => void }) {
+  const [messages, setMessages] = useState([
+    { role: 'agent', text: `“${project.title}” 연구 기록을 검토할 준비가 됐어요. 빠진 조건이나 재현성을 함께 확인해 볼까요?` },
+  ]);
+  const [message, setMessage] = useState('');
+
+  function sendMessage(event: FormEvent) {
+    event.preventDefault();
+    const text = message.trim();
+    if (!text) return;
+    setMessages((current) => [
+      ...current,
+      { role: 'user', text },
+      { role: 'agent', text: '현재는 대화 화면을 검증하는 베타 단계입니다. 다음 연결 단계에서 프로젝트의 프로토콜과 측정 조건을 바탕으로 실제 AI 검토를 제공할 예정이에요.' },
+    ]);
+    setMessage('');
+  }
+
+  return (
+    <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl flex-col px-5 py-8 md:px-9">
+      <Button variant="ghost" onClick={onBack} className="mb-4 w-fit">← 나의 연구</Button>
+      <div className="mb-6 flex items-center gap-4">
+        <div className="grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"><Bot /></div>
+        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">재현성 에이전트</h1><Badge variant="secondary"><Sparkles /> 베타</Badge></div><p className="mt-1 text-sm text-muted-foreground">{project.title}</p></div>
+      </div>
+      <section className="flex min-h-[520px] flex-1 flex-col overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="flex-1 space-y-4 overflow-y-auto p-5 md:p-7" aria-live="polite">
+          {messages.map((item, index) => (
+            <div key={index} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${item.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>{item.text}</div>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={sendMessage} className="flex gap-2 border-t p-4">
+          <Input value={message} onChange={(event) => setMessage(event.target.value)} className="h-10" placeholder="예: 이 실험에서 빠진 조건이 있어?" aria-label="재현성 에이전트에게 보낼 메시지" />
+          <Button type="submit" size="icon" aria-label="메시지 보내기"><Send /></Button>
+        </form>
+      </section>
+    </div>
   );
 }
