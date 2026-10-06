@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { SubmitEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Atom,
   BarChart3,
@@ -64,19 +64,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-
-type Project = {
-  id: string;
-  title: string;
-  topic: string;
-  field: string;
-  status: '계획 중' | '진행 중' | '완료';
-  start_date: string | null;
-  due_date: string | null;
-  progress: number;
-  created_at: string;
-  updated_at: string;
-};
+import { databaseError, type Project } from '@/lib/project';
+import { ProjectRecords } from '@/components/project-records';
 
 type View = 'projects' | 'protocol' | 'schedule' | 'analysis' | 'reproducibility';
 
@@ -113,6 +102,8 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [tableMissing, setTableMissing] = useState(false);
+  const unsaved = useRef(false);
+  const reportDirty = useCallback((value: boolean) => { unsaved.current = value; }, []);
 
   async function loadProjects() {
     if (!isSupabaseConfigured) {
@@ -127,8 +118,8 @@ export default function Home() {
       .order('updated_at', { ascending: false });
 
     if (error) {
-      setTableMissing(error.code === 'PGRST205' || error.message.includes('projects'));
-      setNotice('Supabase에 projects 테이블을 만든 뒤 연구 기록을 저장할 수 있습니다.');
+      setTableMissing(error.code === 'PGRST205' || error.code === '42P01');
+      setNotice(databaseError(error));
     } else {
       setProjects((data ?? []) as Project[]);
       setTableMissing(false);
@@ -138,36 +129,51 @@ export default function Home() {
   }
 
   useEffect(() => {
-    void loadProjects();
+    const timer = window.setTimeout(() => void loadProjects(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  async function createProject(event: FormEvent<HTMLFormElement>) {
+  async function createProject(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    if (!isSupabaseConfigured) {
+      setNotice('Supabase 연결 정보가 설정되지 않았습니다.');
+      return;
+    }
+    const textValue = (name: string) => { const value = form.get(name); return typeof value === 'string' ? value : ''; };
+    const title = textValue('title').trim();
+    const topic = textValue('topic').trim();
+    const startDate = textValue('start_date');
+    const dueDate = textValue('due_date');
+    if (!title || !topic || (startDate && dueDate && startDate > dueDate)) {
+      setNotice('프로젝트명과 연구 주제를 입력하고 마감일이 시작일 이후인지 확인해 주세요.');
+      return;
+    }
     setSaving(true);
     setNotice(null);
 
     const payload = {
-      title: String(form.get('title') ?? '').trim(),
-      topic: String(form.get('topic') ?? '').trim(),
-      field: String(form.get('field') ?? '기타'),
+      title,
+      topic,
+      field: textValue('field') || '기타',
       status: '계획 중',
-      start_date: form.get('start_date') || null,
-      due_date: form.get('due_date') || null,
+      start_date: startDate || null,
+      due_date: dueDate || null,
       progress: 0,
       updated_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase.from('projects').insert(payload).select().single();
     if (error) {
-      setNotice(tableMissing ? '먼저 Supabase SQL Editor에서 projects 테이블을 만들어 주세요.' : `저장하지 못했습니다: ${error.message}`);
+      setNotice(databaseError(error));
     } else {
       const created = data as Project;
       setProjects((current) => [created, ...current]);
       setSelectedProject(created);
       setDialogOpen(false);
       setNotice('새 연구 프로젝트를 저장했습니다.');
-      event.currentTarget.reset();
+      formElement.reset();
     }
     setSaving(false);
   }
@@ -184,6 +190,9 @@ export default function Home() {
   const completedProjects = projects.filter((project) => project.status === '완료').length;
 
   function navigate(next: View) {
+    if (next === view) return;
+    if (unsaved.current && !window.confirm('저장하지 않은 변경을 취소하고 이동할까요?')) return;
+    unsaved.current = false;
     setView(next);
     if (next === 'projects') setSelectedProject(null);
   }
@@ -248,7 +257,12 @@ export default function Home() {
               {selectedProject?.title ?? '연구 기록을 한곳에서 관리하세요'}
             </p>
           </div>
-          <NewProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} onSubmit={createProject} saving={saving} />
+          <NewProjectDialog open={dialogOpen} onOpenChange={(open) => {
+            if (saving) return;
+            if (open && unsaved.current) { setNotice('현재 기록을 먼저 저장한 뒤 새 프로젝트를 만들어 주세요.'); return; }
+            setNotice(null);
+            setDialogOpen(open);
+          }} onSubmit={createProject} saving={saving} notice={notice} />
         </header>
 
         {view === 'projects' ? (
@@ -270,7 +284,7 @@ export default function Home() {
             }}
           />
         ) : (
-          <WorkspaceView view={view} project={selectedProject ?? projects[0] ?? null} onBack={() => navigate('projects')} />
+          <WorkspaceView key={selectedProject?.id ?? projects[0]?.id ?? 'empty'} view={view} project={selectedProject ?? projects[0] ?? null} onBack={() => navigate('projects')} onDirtyChange={reportDirty} />
         )}
       </SidebarInset>
     </SidebarProvider>
@@ -282,11 +296,13 @@ function NewProjectDialog({
   onOpenChange,
   onSubmit,
   saving,
+  notice,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmit: (event: SubmitEvent<HTMLFormElement>) => void;
   saving: boolean;
+  notice: string | null;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -300,28 +316,29 @@ function NewProjectDialog({
             <DialogDescription>연구의 기본 정보를 입력하세요. 나중에 실험과 기록을 추가할 수 있습니다.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-6">
-            <label className="grid gap-2 text-sm font-medium">
+            <label htmlFor="project-title" className="grid gap-2 text-sm font-medium">
               프로젝트명
-              <Input name="title" required maxLength={120} placeholder="예: 단진자 운동을 이용한 중력가속도 측정" />
+              <Input id="project-title" name="title" required maxLength={120} placeholder="예: 단진자 운동을 이용한 중력가속도 측정" />
             </label>
-            <label className="grid gap-2 text-sm font-medium">
+            <label htmlFor="project-topic" className="grid gap-2 text-sm font-medium">
               연구 주제
-              <Textarea name="topic" required placeholder="무엇을 알아보기 위한 연구인가요?" />
+              <Textarea id="project-topic" name="topic" required placeholder="무엇을 알아보기 위한 연구인가요?" />
             </label>
             <div className="grid gap-4 sm:grid-cols-3">
-              <label className="grid gap-2 text-sm font-medium">
+              <label htmlFor="project-field" className="grid gap-2 text-sm font-medium">
                 연구 분야
                 <Select name="field" defaultValue="물리">
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="project-field" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {['물리', '화학', '생명과학', '지구과학', '정보과학', '융합', '기타'].map((field) => <SelectItem key={field} value={field}>{field}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </label>
-              <label className="grid gap-2 text-sm font-medium">시작일<Input name="start_date" type="date" /></label>
-              <label className="grid gap-2 text-sm font-medium">마감일<Input name="due_date" type="date" /></label>
+              <label htmlFor="project-start" className="grid gap-2 text-sm font-medium">시작일<Input id="project-start" name="start_date" type="date" /></label>
+              <label htmlFor="project-due" className="grid gap-2 text-sm font-medium">마감일<Input id="project-due" name="due_date" type="date" /></label>
             </div>
           </div>
+          {notice && <output className="mb-4 block text-sm text-destructive">{notice}</output>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
             <Button type="submit" disabled={saving}>{saving ? '저장 중…' : '프로젝트 저장'}</Button>
@@ -376,7 +393,7 @@ function ProjectsView({
       {notice && (
         <div className={`mb-6 flex flex-col justify-between gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center ${tableMissing ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-cyan-200 bg-cyan-50 text-cyan-950'}`}>
           <span>{notice}</span>
-          {tableMissing && <Button variant="outline" size="sm" onClick={() => void onRetry()}>연결 다시 확인</Button>}
+          <Button variant="outline" size="sm" onClick={onRetry}>연결 다시 확인</Button>
         </div>
       )}
 
@@ -440,7 +457,7 @@ function StatCard({ label, value, detail }: { label: string; value: number; deta
   );
 }
 
-function WorkspaceView({ view, project, onBack }: { view: View; project: Project | null; onBack: () => void }) {
+function WorkspaceView({ view, project, onBack, onDirtyChange }: { view: View; project: Project | null; onBack: () => void; onDirtyChange: (value: boolean) => void }) {
   if (!project) {
     return (
       <div className="grid min-h-[calc(100vh-5rem)] place-items-center p-5">
@@ -453,6 +470,7 @@ function WorkspaceView({ view, project, onBack }: { view: View; project: Project
   }
 
   if (view === 'reproducibility') return <AgentChat project={project} onBack={onBack} />;
+  if (view === 'protocol' || view === 'schedule') return <ProjectRecords key={`${project.id}-${view}`} project={project} view={view} onBack={onBack} onDirtyChange={onDirtyChange} />;
 
   const content = {
     protocol: { eyebrow: 'EXPERIMENT NOTES', title: '실험 프로토콜', body: '실험 단계를 순서대로 기록하고 각 단계의 조건과 준비물을 정리합니다.', icon: FlaskConical },
@@ -484,7 +502,7 @@ function AgentChat({ project, onBack }: { project: Project; onBack: () => void }
   ]);
   const [message, setMessage] = useState('');
 
-  function sendMessage(event: FormEvent) {
+  function sendMessage(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = message.trim();
     if (!text) return;
