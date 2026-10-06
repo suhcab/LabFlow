@@ -47,7 +47,20 @@
 
 프로젝트별 프로토콜 작성·저장과 일정 추가·수정·삭제·완료 처리를 구현했습니다. DB 준비와 검증 순서는 [3차시 기록](docs/session-3.md)에 정리했습니다. `supabase/schema.sql`에는 projects, protocols, research_events 테이블과 수업용 RLS 정책이 포함되어 있습니다.
 
-현재 원격 Supabase 호스트 연결이 실패해 실제 DB 저장 검증은 남아 있습니다. SQL Editor에서 스키마를 실행하고 프로젝트 주소를 확인한 뒤 검증해야 합니다.
+기존 Supabase 주소는 DNS 조회에서 존재하지 않는 호스트로 확인되었습니다. Dashboard에서 활성 프로젝트의 실제 Project URL과 공개 키를 확인하고 아래 설정을 적용해야 합니다.
+
+## Vercel 배포
+
+Vercel에서 GitHub 저장소 `suhcab/LabFlow`를 가져옵니다. `vercel.json`이 Vite 프레임워크, `npm run build:vercel` 빌드 명령과 `dist/vercel` 출력 경로를 설정합니다. 기존 Cloudflare 빌드와 별도로 같은 연구 화면을 정적 앱으로 빌드합니다.
+
+Vercel의 Environment Variables에 다음 값을 Production과 Preview 환경에 설정합니다. 환경 변수 변경 후에는 다시 배포해야 브라우저에 반영됩니다.
+
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase Dashboard의 Project URL
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: 같은 프로젝트의 Publishable key (기존 프로젝트는 `NEXT_PUBLIC_SUPABASE_ANON_KEY`도 지원)
+
+`service_role` 또는 Secret key는 브라우저 환경 변수에 넣지 않습니다. 로컬에서는 같은 값을 `.env.local`에 설정하고 개발 서버를 재시작합니다. SQL Editor에서 `supabase/schema.sql`을 실행한 후 새 프로젝트 저장 및 새로고침 후 조회를 확인합니다.
+
+현재 DB 정책은 로그인 없이 연구 기록을 공유하는 수업용 정책입니다. 개인별 비공개 연구 기록을 제공하려면 Supabase Auth와 사용자별 RLS 정책을 적용해야 합니다.
 
 ## 실행
 
