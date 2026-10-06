@@ -66,6 +66,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { databaseError, type Project } from '@/lib/project';
 import { ProjectRecords } from '@/components/project-records';
+import { AuthGate } from '@/components/auth-gate';
 
 type View = 'projects' | 'protocol' | 'schedule' | 'analysis' | 'reproducibility';
 
@@ -93,6 +94,10 @@ function formatDate(value: string | null) {
 }
 
 export default function Home() {
+  return <AuthGate><ResearchHome /></AuthGate>;
+}
+
+function ResearchHome() {
   const [view, setView] = useState<View>('projects');
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -235,6 +240,13 @@ export default function Home() {
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={async () => {
+                if (unsaved.current && !window.confirm('저장하지 않은 변경을 취소하고 로그아웃할까요?')) return;
+                const { error } = await supabase.auth.signOut();
+                if (error) setNotice('로그아웃하지 못했습니다. 다시 시도해 주세요.');
+              }}><span>로그아웃</span></SidebarMenuButton>
+            </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton tooltip="설정" className="h-10">
                 <Settings2 /><span>설정</span>

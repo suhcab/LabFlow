@@ -5,6 +5,7 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id),
   title text not null check (char_length(title) between 1 and 120),
   topic text not null default '',
   field text not null default '기타',
@@ -19,29 +20,28 @@ create table if not exists public.projects (
 
 alter table public.projects enable row level security;
 
-grant select, insert, update on table public.projects to anon, authenticated;
+grant select, insert, update on table public.projects to authenticated;
 
 drop policy if exists "demo projects can be read" on public.projects;
 create policy "demo projects can be read"
 on public.projects for select
-to anon, authenticated
-using (true);
+to authenticated
+using (user_id = (select auth.uid()));
 
 drop policy if exists "demo projects can be created" on public.projects;
 create policy "demo projects can be created"
 on public.projects for insert
-to anon, authenticated
-with check (true);
+to authenticated
+with check (user_id = (select auth.uid()));
 
 drop policy if exists "demo projects can be updated" on public.projects;
 create policy "demo projects can be updated"
 on public.projects for update
-to anon, authenticated
-using (true)
-with check (true);
+to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
 
--- 현재 사이트가 비공개인 수업용 1차 버전에 한해 사용하는 정책입니다.
--- 공개 배포 전에는 Supabase Auth와 user_id 기반 정책으로 교체해야 합니다.
+-- 로그인한 사용자만 자신의 연구 기록을 조회하고 수정할 수 있습니다.
 
 -- 3차시: 프로젝트별 프로토콜과 연구 일정
 create table if not exists public.protocols (
@@ -67,21 +67,25 @@ create table if not exists public.research_events (
 create index if not exists research_events_project_date_idx on public.research_events(project_id, event_date);
 alter table public.protocols enable row level security;
 alter table public.research_events enable row level security;
-grant select, insert, update on public.protocols to anon, authenticated;
-grant select, insert, update, delete on public.research_events to anon, authenticated;
+grant select, insert, update on public.protocols to authenticated;
+grant select, insert, update, delete on public.research_events to authenticated;
 
 drop policy if exists "demo protocols read" on public.protocols;
-create policy "demo protocols read" on public.protocols for select to anon, authenticated using (true);
+create policy "demo protocols read" on public.protocols for select to authenticated using (exists (select 1 from public.projects where projects.id = protocols.project_id and projects.user_id = (select auth.uid())));
 drop policy if exists "demo protocols insert" on public.protocols;
-create policy "demo protocols insert" on public.protocols for insert to anon, authenticated with check (true);
+create policy "demo protocols insert" on public.protocols for insert to authenticated with check (exists (select 1 from public.projects where projects.id = protocols.project_id and projects.user_id = (select auth.uid())));
 drop policy if exists "demo protocols update" on public.protocols;
-create policy "demo protocols update" on public.protocols for update to anon, authenticated using (true) with check (true);
+create policy "demo protocols update" on public.protocols for update to authenticated using (exists (select 1 from public.projects where projects.id = protocols.project_id and projects.user_id = (select auth.uid()))) with check (exists (select 1 from public.projects where projects.id = protocols.project_id and projects.user_id = (select auth.uid())));
 
 drop policy if exists "demo events read" on public.research_events;
-create policy "demo events read" on public.research_events for select to anon, authenticated using (true);
+create policy "demo events read" on public.research_events for select to authenticated using (exists (select 1 from public.projects where projects.id = research_events.project_id and projects.user_id = (select auth.uid())));
 drop policy if exists "demo events insert" on public.research_events;
-create policy "demo events insert" on public.research_events for insert to anon, authenticated with check (true);
+create policy "demo events insert" on public.research_events for insert to authenticated with check (exists (select 1 from public.projects where projects.id = research_events.project_id and projects.user_id = (select auth.uid())));
 drop policy if exists "demo events update" on public.research_events;
-create policy "demo events update" on public.research_events for update to anon, authenticated using (true) with check (true);
+create policy "demo events update" on public.research_events for update to authenticated using (exists (select 1 from public.projects where projects.id = research_events.project_id and projects.user_id = (select auth.uid()))) with check (exists (select 1 from public.projects where projects.id = research_events.project_id and projects.user_id = (select auth.uid())));
 drop policy if exists "demo events delete" on public.research_events;
-create policy "demo events delete" on public.research_events for delete to anon, authenticated using (true);
+create policy "demo events delete" on public.research_events for delete to authenticated using (exists (select 1 from public.projects where projects.id = research_events.project_id and projects.user_id = (select auth.uid())));
+
+create index if not exists projects_user_id_idx on public.projects(user_id);
+revoke all on public.projects, public.protocols, public.research_events from anon;
+

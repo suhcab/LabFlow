@@ -47,7 +47,7 @@
 
 프로젝트별 프로토콜 작성·저장과 일정 추가·수정·삭제·완료 처리를 구현했습니다. DB 준비와 검증 순서는 [3차시 기록](docs/session-3.md)에 정리했습니다. `supabase/schema.sql`에는 projects, protocols, research_events 테이블과 수업용 RLS 정책이 포함되어 있습니다.
 
-기존 Supabase 주소는 DNS 조회에서 존재하지 않는 호스트로 확인되었습니다. Dashboard에서 활성 프로젝트의 실제 Project URL과 공개 키를 확인하고 아래 설정을 적용해야 합니다.
+Supabase Dashboard에서 기존 프로젝트와 주소가 일치함을 확인했습니다. 공개 배포에서는 이메일 로그인과 사용자별 RLS 정책을 사용합니다.
 
 ## Vercel 배포
 
@@ -60,7 +60,7 @@ Vercel의 Environment Variables에 다음 값을 Production과 Preview 환경에
 
 `service_role` 또는 Secret key는 브라우저 환경 변수에 넣지 않습니다. 로컬에서는 같은 값을 `.env.local`에 설정하고 개발 서버를 재시작합니다. SQL Editor에서 `supabase/schema.sql`을 실행한 후 새 프로젝트 저장 및 새로고침 후 조회를 확인합니다.
 
-현재 DB 정책은 로그인 없이 연구 기록을 공유하는 수업용 정책입니다. 개인별 비공개 연구 기록을 제공하려면 Supabase Auth와 사용자별 RLS 정책을 적용해야 합니다.
+프로젝트는 로그인한 사용자의 user_id를 기본값으로 저장합니다. 프로젝트·프로토콜·일정의 RLS 정책은 소유자만 조회·수정하도록 제한하며 anon 테이블 권한은 제거합니다. Supabase Authentication의 Site URL은 실제 배포 주소로 설정해야 가입 확인 메일이 올바른 사이트로 연결됩니다.
 
 ## 실행
 
@@ -69,3 +69,4 @@ npm run dev
 ```
 
 배포용 검증은 `npm run build`로 수행합니다.
+
