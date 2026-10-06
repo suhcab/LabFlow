@@ -45,11 +45,15 @@
 
 ## 3차시 진행
 
-프로젝트별 프로토콜 작성·저장과 일정 추가·수정·삭제·완료 처리를 구현했습니다. DB 준비와 검증 순서는 [3차시 기록](docs/session-3.md)에 정리했습니다. `supabase/schema.sql`에는 projects, protocols, research_events 테이블과 수업용 RLS 정책이 포함되어 있습니다.
+프로젝트별 프로토콜 작성·저장과 일정 추가·수정·삭제·완료 처리를 구현했습니다. `supabase/schema.sql`에는 projects, protocols, research_events 테이블과 로그인한 사용자별 RLS 정책이 포함되어 있습니다. [3차시 기록](docs/session-3.md)은 로그인 적용 이전 구현 기록입니다.
 
 Supabase Dashboard에서 기존 프로젝트와 주소가 일치함을 확인했습니다. 공개 배포에서는 이메일 로그인과 사용자별 RLS 정책을 사용합니다.
 
 ## Vercel 배포
+
+운영 주소: https://lab-flow-theta.vercel.app
+
+처음에는 회원가입 후 가입 확인 메일의 링크를 누르고 로그인합니다. Supabase 테이블과 사용자별 정책, 운영 환경 변수, 가입 확인 메일의 Site URL을 적용했습니다. 실제 DB 트랜잭션에서 본인 프로젝트·프로토콜·일정 저장과 조회, 다른 사용자 데이터 격리, 비로그인 권한 차단을 검증했으며 검증 데이터는 롤백했습니다. 배포된 로그인 화면에서 인증 API 연결 응답도 확인했습니다. 실제 회원가입 메일 수신과 로그인 후 화면에서의 저장 확인은 사용자의 첫 가입 후 진행합니다.
 
 Vercel에서 GitHub 저장소 `suhcab/LabFlow`를 가져옵니다. `vercel.json`이 Vite 프레임워크, `npm run build:vercel` 빌드 명령과 `dist/vercel` 출력 경로를 설정합니다. 기존 Cloudflare 빌드와 별도로 같은 연구 화면을 정적 앱으로 빌드합니다.
 
