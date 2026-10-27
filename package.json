@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "build:vercel": "vite build --config vite.vercel.config.ts",
-    "test": "node --experimental-strip-types --test tests/research.test.mjs tests/references.test.mjs",
+    "test": "node --experimental-strip-types --test tests/research.test.mjs tests/references.test.mjs tests/image-analysis.test.mjs",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt"

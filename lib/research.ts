@@ -1,3 +1,5 @@
+import type { ImageAnalysisRecord } from './image-analysis';
+
 export type ProtocolStep = {
   id: string;
   title: string;
@@ -8,6 +10,7 @@ export type ProtocolStep = {
 };
 export type ProtocolRecord = { purpose: string; steps: ProtocolStep[] };
 export type ResearchDesign = {
+  image_analyses?: ImageAnalysisRecord[];
   research_type: 'experiment' | 'simulation' | 'observational';
   question: string;
   hypothesis: string;

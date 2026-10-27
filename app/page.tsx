@@ -12,6 +12,7 @@ import {
 import {
   Atom,
   BookOpen,
+  ImagePlus,
   BarChart3,
   ClipboardCheck,
   GitCompare,
@@ -90,6 +91,7 @@ const projectTabs: { id: View; label: string; icon: typeof FolderKanban }[] = [
   { id: 'comparison', label: '실험 비교', icon: GitCompare },
   { id: 'reproducibility', label: '재현성 점검', icon: ClipboardCheck },
   { id: 'references', label: '참고문헌', icon: BookOpen },
+  { id: 'images', label: '사진 분석', icon: ImagePlus },
 ];
 
 const fieldStyles: Record<string, string> = {

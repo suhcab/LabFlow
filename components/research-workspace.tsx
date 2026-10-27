@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { ReferenceLibrary } from '@/components/reference-library';
+import { ImageWorkspace } from '@/components/image-workspace';
+import type { ImageAnalysisRecord } from '@/lib/image-analysis';
 import { appendCitation, type Reference } from '@/lib/references';
 import { databaseError, type Project } from '@/lib/project';
 import {
@@ -35,6 +37,7 @@ export type ResearchView =
   | 'analysis'
   | 'comparison'
   | 'references'
+  | 'images'
   | 'reproducibility';
 type Props = {
   project: Project;
@@ -45,7 +48,7 @@ type Props = {
 };
 const today = () => new Intl.DateTimeFormat('sv-SE').format(new Date());
 const designFields: {
-  key: Exclude<keyof ResearchDesign, 'research_type'>;
+  key: Exclude<keyof ResearchDesign, 'research_type' | 'image_analyses'>;
   label: string;
   hint: string;
 }[] = [
@@ -247,6 +250,39 @@ export function ResearchWorkspace({
     markDirty(false);
     setNotice('연구 현황과 설계를 저장했습니다.');
   }
+  async function saveImageAnalysis(record: ImageAnalysisRecord) {
+    if (saving || (design.image_analyses?.length ?? 0) >= 30) return false;
+    setSaving(true);
+    setNotice('');
+    const next = {
+      ...design,
+      image_analyses: [record, ...(design.image_analyses ?? [])],
+    };
+    try {
+      const result = await supabase.from('research_designs').upsert({
+        project_id: project.id,
+        design: next,
+        updated_at: new Date().toISOString(),
+      });
+      if (result.error) {
+        setNotice(databaseError(result.error));
+        return false;
+      }
+      setDesign(next);
+      markDirty(false);
+      setNotice(
+        '사진 분석 수치·좌표·측정 조건을 저장했습니다. 원본 사진은 기기에 별도로 보관하세요.',
+      );
+      return true;
+    } catch {
+      setNotice(
+        '사진 분석을 저장하지 못했습니다. 연결을 확인한 뒤 다시 시도하세요.',
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
   async function addReference(ref: Reference) {
     if (saving || dirty) return;
     setSaving(true);
@@ -256,13 +292,11 @@ export function ResearchWorkspace({
       data_source: appendCitation(design.data_source, ref),
     };
     try {
-      const result = await supabase
-        .from('research_designs')
-        .upsert({
-          project_id: project.id,
-          design: next,
-          updated_at: new Date().toISOString(),
-        });
+      const result = await supabase.from('research_designs').upsert({
+        project_id: project.id,
+        design: next,
+        updated_at: new Date().toISOString(),
+      });
       if (result.error) setNotice(databaseError(result.error));
       else {
         setDesign(next);
@@ -383,6 +417,11 @@ export function ResearchWorkspace({
         );
         return `### ${dataset.name}\n측정량: ${dataset.quantity} (${dataset.unit})\n날짜: ${dataset.run_date}\n조건: ${dataset.conditions}\nn=${stats.n}, 평균=${formatNumber(stats.mean)}, 표본 s=${formatNumber(stats.sd)}, uA=${formatNumber(stats.sem)}, 분해능 uB=${formatNumber(stats.typeB)}, uc=${formatNumber(stats.combined)}, U=${formatNumber(stats.expanded)} (k=${dataset.coverage_factor})\n제외 사유: ${JSON.stringify(dataset.exclusions)}\n원자료: ${dataset.values.join(', ')}\n메모: ${dataset.notes}`;
       }),
+      '## 사진 수치 분석',
+      ...(design.image_analyses ?? []).map(
+        (record) =>
+          `### ${record.title}\n파일: ${record.filename}, ${record.width}×${record.height}px\nSHA-256: ${record.sha256}\n영역 A 평균 밝기: ${record.a.mean.brightness}, 기준 이상 면적: ${record.a.abovePercent}%\n${record.b ? `영역 B 평균 밝기: ${record.b.mean.brightness}, 기준 이상 면적: ${record.b.abovePercent}%` : '영역 B 미지정'}\n측정: ${record.measurement ? `${record.measurement.length ?? record.measurement.pixels} ${record.measurement.unit}` : '미기록'}\n조건: ${record.notes}\n계산 방법: ${record.method}\n사진 원본은 별도로 보관해야 합니다. 전체 수치·좌표는 연구 기록 JSON에 포함됩니다.`,
+      ),
       '## 기록 기반 재현성 점검',
       '이 결과는 기록 누락 점검이며 실제 재실험 성공이나 과학적 타당성을 보장하지 않습니다.',
       ...findings.map(
@@ -423,6 +462,7 @@ export function ResearchWorkspace({
               analysis: '데이터·불확도 분석',
               comparison: '실험 간 비교',
               references: '참고문헌 추천',
+              images: '사진 수치 분석',
               reproducibility: '재현성 점검',
             }[view]
           }
@@ -456,6 +496,16 @@ export function ResearchWorkspace({
           source={design.data_source}
           saving={saving || dirty}
           onAdd={addReference}
+        />
+      )}
+      {view === 'images' && (
+        <ImageWorkspace
+          key={project.id}
+          records={design.image_analyses ?? []}
+          dirty={dirty}
+          saving={saving}
+          onDirty={markDirty}
+          onSave={saveImageAnalysis}
         />
       )}
       {view === 'overview' && (
