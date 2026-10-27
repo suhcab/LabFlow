@@ -325,13 +325,13 @@ function ResearchHome() {
   return (
     <SidebarProvider defaultOpen>
       <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-        <SidebarHeader className="h-20 justify-center border-b px-3">
+        <SidebarHeader className="h-20 justify-center border-b px-3 group-data-[collapsible=icon]:px-1">
           <button
             onClick={() => navigate('projects')}
-            className="flex items-center gap-3 overflow-hidden px-1 text-left"
+            className="flex items-center gap-3 overflow-hidden px-1 text-left group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
             aria-label="LabFlow 프로젝트 목록"
           >
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground group-data-[collapsible=icon]:size-8">
               <Atom className="size-5" />
             </span>
             <span className="group-data-[collapsible=icon]:hidden">
