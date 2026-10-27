@@ -3,18 +3,13 @@
 import { SubmitEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Atom,
-  BarChart3,
-  Bot,
   CalendarDays,
   ChevronRight,
-  ClipboardCheck,
   FlaskConical,
   FolderKanban,
+  LogOut,
   Plus,
   Search,
-  Send,
-  Settings2,
-  Sparkles,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +32,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -68,14 +62,12 @@ import { databaseError, type Project } from '@/lib/project';
 import { ProjectRecords } from '@/components/project-records';
 import { AuthGate } from '@/components/auth-gate';
 
-type View = 'projects' | 'protocol' | 'schedule' | 'analysis' | 'reproducibility';
+type View = 'projects' | 'protocol' | 'schedule';
 
 const navItems: { id: View; label: string; icon: typeof FolderKanban }[] = [
   { id: 'projects', label: '나의 연구', icon: FolderKanban },
   { id: 'protocol', label: '실험 프로토콜', icon: FlaskConical },
   { id: 'schedule', label: '연구 일정', icon: CalendarDays },
-  { id: 'analysis', label: '데이터 분석', icon: BarChart3 },
-  { id: 'reproducibility', label: '재현성 에이전트', icon: ClipboardCheck },
 ];
 
 const fieldStyles: Record<string, string> = {
@@ -140,6 +132,7 @@ function ResearchHome() {
 
   async function createProject(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     if (!isSupabaseConfigured) {
@@ -191,8 +184,6 @@ function ResearchHome() {
     );
   }, [projects, query]);
 
-  const activeProjects = projects.filter((project) => project.status !== '완료').length;
-  const completedProjects = projects.filter((project) => project.status === '완료').length;
 
   function navigate(next: View) {
     if (next === view) return;
@@ -241,16 +232,11 @@ function ResearchHome() {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={async () => {
+              <SidebarMenuButton tooltip="로그아웃" aria-label="로그아웃" onClick={async () => {
                 if (unsaved.current && !window.confirm('저장하지 않은 변경을 취소하고 로그아웃할까요?')) return;
                 const { error } = await supabase.auth.signOut();
                 if (error) setNotice('로그아웃하지 못했습니다. 다시 시도해 주세요.');
-              }}><span>로그아웃</span></SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton tooltip="설정" className="h-10">
-                <Settings2 /><span>설정</span>
-              </SidebarMenuButton>
+              }}><LogOut /><span>로그아웃</span></SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>
@@ -284,8 +270,6 @@ function ResearchHome() {
             loading={loading}
             query={query}
             setQuery={setQuery}
-            activeProjects={activeProjects}
-            completedProjects={completedProjects}
             notice={notice}
             tableMissing={tableMissing}
             onRetry={loadProjects}
@@ -367,8 +351,6 @@ function ProjectsView({
   loading,
   query,
   setQuery,
-  activeProjects,
-  completedProjects,
   notice,
   tableMissing,
   onRetry,
@@ -380,8 +362,6 @@ function ProjectsView({
   loading: boolean;
   query: string;
   setQuery: (value: string) => void;
-  activeProjects: number;
-  completedProjects: number;
   notice: string | null;
   tableMissing: boolean;
   onRetry: () => void;
@@ -394,7 +374,7 @@ function ProjectsView({
         <div>
           <p className="mb-2 text-sm font-semibold text-primary">RESEARCH LIBRARY</p>
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">나의 연구</h1>
-          <p className="mt-2 text-base text-muted-foreground">진행 중인 프로젝트와 이전 연구 기록을 확인하세요.</p>
+          <p className="mt-2 text-base text-muted-foreground">프로젝트를 선택해 실험 프로토콜과 연구 일정을 관리하세요.</p>
         </div>
         <div className="relative w-full md:w-80">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -409,10 +389,9 @@ function ProjectsView({
         </div>
       )}
 
-      <section className="mb-8 grid gap-4 sm:grid-cols-3">
+      <section className="mb-8 grid gap-4 sm:grid-cols-2">
         <StatCard label="전체 프로젝트" value={allProjects.length} detail="Supabase에 저장된 연구" />
-        <StatCard label="진행 중" value={activeProjects} detail="계획 중인 연구 포함" />
-        <StatCard label="완료" value={completedProjects} detail="보관된 연구 기록" />
+        <StatCard label="검색 결과" value={projects.length} detail={query ? `“${query}” 검색 결과` : '현재 표시 중인 연구'} />
       </section>
 
       {loading ? (
@@ -430,14 +409,9 @@ function ProjectsView({
             >
               <div className="flex items-start justify-between gap-4">
                 <Badge className={fieldStyles[project.field] ?? fieldStyles.기타}>{project.field}</Badge>
-                <Badge variant="outline">{project.status}</Badge>
               </div>
               <h2 className="mt-6 line-clamp-2 text-xl font-bold leading-snug">{project.title}</h2>
               <p className="mt-2 line-clamp-2 min-h-12 text-sm leading-6 text-muted-foreground">{project.topic || '연구 주제를 입력하지 않았습니다.'}</p>
-              <div className="mt-6">
-                <div className="mb-2 flex justify-between text-sm"><span className="text-muted-foreground">진행률</span><strong>{project.progress}%</strong></div>
-                <Progress value={project.progress} />
-              </div>
               <div className="mt-5 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
                 <span>마감 {formatDate(project.due_date)}</span>
                 <ChevronRight className="size-4 transition-transform group-hover:translate-x-1" />
@@ -450,7 +424,7 @@ function ProjectsView({
           <EmptyHeader>
             <EmptyMedia variant="icon"><FolderKanban /></EmptyMedia>
             <EmptyTitle className="text-base">{query ? '검색 결과가 없습니다' : '첫 연구를 시작해 보세요'}</EmptyTitle>
-            <EmptyDescription>{query ? '다른 프로젝트명이나 분야를 검색해 보세요.' : '프로젝트를 만들면 일정, 실험 과정과 측정값을 함께 기록할 수 있습니다.'}</EmptyDescription>
+            <EmptyDescription>{query ? '다른 프로젝트명이나 분야를 검색해 보세요.' : '프로젝트를 만들면 실험 과정과 연구 일정을 함께 기록할 수 있습니다.'}</EmptyDescription>
           </EmptyHeader>
           {!query && !tableMissing && <EmptyContent><Button onClick={onCreate}><Plus /> 새 프로젝트 만들기</Button></EmptyContent>}
         </Empty>
@@ -481,71 +455,5 @@ function WorkspaceView({ view, project, onBack, onDirtyChange }: { view: View; p
     );
   }
 
-  if (view === 'reproducibility') return <AgentChat project={project} onBack={onBack} />;
-  if (view === 'protocol' || view === 'schedule') return <ProjectRecords key={`${project.id}-${view}`} project={project} view={view} onBack={onBack} onDirtyChange={onDirtyChange} />;
-
-  const content = {
-    protocol: { eyebrow: 'EXPERIMENT NOTES', title: '실험 프로토콜', body: '실험 단계를 순서대로 기록하고 각 단계의 조건과 준비물을 정리합니다.', icon: FlaskConical },
-    schedule: { eyebrow: 'SCHEDULE', title: '연구 일정', body: '실험일, 분석일과 제출 마감일을 한곳에서 관리합니다.', icon: CalendarDays },
-    analysis: { eyebrow: 'MEASUREMENTS', title: '데이터 분석', body: '반복 측정값을 입력하고 평균, 표준편차와 불확도를 계산합니다.', icon: BarChart3 },
-  }[view as Exclude<View, 'projects' | 'reproducibility'>];
-  const Icon = content.icon;
-
-  return (
-    <div className="mx-auto w-full max-w-5xl px-5 py-10 md:px-9">
-      <Button variant="ghost" onClick={onBack} className="mb-6">← 나의 연구</Button>
-      <Badge className={fieldStyles[project.field] ?? fieldStyles.기타}>{project.field}</Badge>
-      <p className="mt-8 text-sm font-semibold text-primary">{content.eyebrow}</p>
-      <h1 className="mt-2 text-3xl font-bold">{content.title}</h1>
-      <p className="mt-2 text-base text-muted-foreground">{project.title}</p>
-      <div className="mt-8 rounded-2xl border bg-card p-8 shadow-sm">
-        <div className="grid size-12 place-items-center rounded-xl bg-secondary text-primary"><Icon /></div>
-        <h2 className="mt-6 text-xl font-bold">기록 준비 완료</h2>
-        <p className="mt-2 max-w-xl leading-7 text-muted-foreground">{content.body}</p>
-        <Button className="mt-6"><Plus /> 첫 기록 추가</Button>
-      </div>
-    </div>
-  );
-}
-
-function AgentChat({ project, onBack }: { project: Project; onBack: () => void }) {
-  const [messages, setMessages] = useState([
-    { role: 'agent', text: `“${project.title}” 연구 기록을 검토할 준비가 됐어요. 빠진 조건이나 재현성을 함께 확인해 볼까요?` },
-  ]);
-  const [message, setMessage] = useState('');
-
-  function sendMessage(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = message.trim();
-    if (!text) return;
-    setMessages((current) => [
-      ...current,
-      { role: 'user', text },
-      { role: 'agent', text: '현재는 대화 화면을 검증하는 베타 단계입니다. 다음 연결 단계에서 프로젝트의 프로토콜과 측정 조건을 바탕으로 실제 AI 검토를 제공할 예정이에요.' },
-    ]);
-    setMessage('');
-  }
-
-  return (
-    <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl flex-col px-5 py-8 md:px-9">
-      <Button variant="ghost" onClick={onBack} className="mb-4 w-fit">← 나의 연구</Button>
-      <div className="mb-6 flex items-center gap-4">
-        <div className="grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"><Bot /></div>
-        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">재현성 에이전트</h1><Badge variant="secondary"><Sparkles /> 베타</Badge></div><p className="mt-1 text-sm text-muted-foreground">{project.title}</p></div>
-      </div>
-      <section className="flex min-h-[520px] flex-1 flex-col overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="flex-1 space-y-4 overflow-y-auto p-5 md:p-7" aria-live="polite">
-          {messages.map((item, index) => (
-            <div key={index} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${item.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>{item.text}</div>
-            </div>
-          ))}
-        </div>
-        <form onSubmit={sendMessage} className="flex gap-2 border-t p-4">
-          <Input value={message} onChange={(event) => setMessage(event.target.value)} className="h-10" placeholder="예: 이 실험에서 빠진 조건이 있어?" aria-label="재현성 에이전트에게 보낼 메시지" />
-          <Button type="submit" size="icon" aria-label="메시지 보내기"><Send /></Button>
-        </form>
-      </section>
-    </div>
-  );
+  return <ProjectRecords key={`${project.id}-${view}`} project={project} view={view === 'schedule' ? 'schedule' : 'protocol'} onBack={onBack} onDirtyChange={onDirtyChange} />;
 }

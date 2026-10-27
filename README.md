@@ -1,76 +1,65 @@
 # LabFlow
 
-학생 연구자가 실험 프로토콜, 일정, 측정값, 불확도와 재현성 정보를 한곳에서 관리하는 통합 연구 노트입니다.
+학생 연구자를 위한 개인 연구 노트입니다. 프로젝트별 실험 프로토콜과 연구 일정을 Supabase에 저장합니다.
 
-## 제품 목표
+- 사이트: https://lab-flow-theta.vercel.app
+- 저장소: https://github.com/suhcab/LabFlow
 
-연구 기록이 여러 문서에 흩어져 재현하기 어려운 문제를 줄입니다. 사용자가 실험 과정을 단계별로 기록하면 LabFlow가 일정과 측정값을 정리하고, 빠진 조건과 추가 검증 사항을 확인할 수 있게 돕습니다.
+## 제출 버전의 기능
 
-## 핵심 사용자 흐름
+| 구분 | 기능 | 동작 |
+| --- | --- | --- |
+| 메인 | 실험 프로토콜 작성·관리 | 실험 목적, 단계별 제목·준비물·장비·조건·주의 사항 입력, 단계 추가·순서 변경·삭제, 저장·조회 |
+| 서브 1 | 연구 프로젝트 관리 | 프로젝트 생성, 목록 조회, 프로젝트명·주제·분야 검색 |
+| 서브 2 | 연구 일정 관리 | 날짜·시간·종류·메모 입력, 일정 추가·수정·삭제·완료 처리 |
+| 서브 3 | 회원 인증과 개인별 기록 | 이메일 회원가입·확인·로그인·로그아웃, 소유자별 접근 제한 |
 
-1. 연구 프로젝트 생성
-2. 실험 프로토콜 작성
-3. 실험 일정 등록
-4. 조건과 반복 측정값 기록
-5. 평균, 표준편차, 표준오차와 불확도 계산
-6. 재현성 체크리스트 확인
+데이터 분석, 실제 AI 검토, 프로젝트 진행률 편집은 제출 버전에 포함하지 않습니다. 미구현 메뉴와 고정 응답 AI 화면은 제거했습니다.
 
-## 1차 개발 범위
+## 사용 순서
 
-- 대시보드와 사이드바 구조
-- 물리 실험 기반 대표 데이터
-- 프로토콜, 일정, 측정값 미리보기
-- 반응형 기본 화면
+1. 사이트에서 회원가입하고 이메일의 확인 링크를 누른 뒤 로그인합니다.
+2. **새 프로젝트**에서 프로젝트명·연구 주제·분야·선택 날짜를 입력하고 저장합니다.
+3. 프로젝트 카드를 눌러 **실험 프로토콜**을 엽니다. 목적과 단계를 입력하고 **프로토콜 저장**을 누릅니다.
+4. **연구 일정**에서 **일정 추가**를 눌러 날짜와 제목을 입력하고 저장합니다. 목록에서 수정·완료·삭제할 수 있습니다.
+5. 새로고침하거나 로그아웃 후 다시 로그인하여 저장된 기록이 유지되는지 확인합니다.
 
-대표 실험은 **단진자 운동을 이용한 중력가속도 측정**입니다. 진자 길이, 반복 측정한 주기, 장비와 환경 조건을 이후 계산 및 재현성 검사 기능의 기준 데이터로 사용합니다.
+저장하지 않은 기록이 있으면 이동·로그아웃·새로고침 전에 확인 메시지를 표시합니다.
 
-## 화면 구성
-
-- 대시보드
-- 실험 프로토콜
-- 연구 일정
-- 데이터 분석
-- 재현성 검사
-
-## 개발 순서
-
-1. 기본 화면과 프로젝트 구조
-2. 프로토콜 작성 및 편집
-3. 일정 관리
-4. 통계·불확도 계산과 재현성 검사
-5. 결과 표·그래프 및 UI 정리
-6. 데이터베이스 설계와 Supabase 연결
-7. 기록 저장·수정
-8. 이전 기록 조회와 실험 간 비교
-
-## 3차시 진행
-
-프로젝트별 프로토콜 작성·저장과 일정 추가·수정·삭제·완료 처리를 구현했습니다. `supabase/schema.sql`에는 projects, protocols, research_events 테이블과 로그인한 사용자별 RLS 정책이 포함되어 있습니다. [3차시 기록](docs/session-3.md)은 로그인 적용 이전 구현 기록입니다.
-
-Supabase Dashboard에서 기존 프로젝트와 주소가 일치함을 확인했습니다. 공개 배포에서는 이메일 로그인과 사용자별 RLS 정책을 사용합니다.
-
-## Vercel 배포
-
-운영 주소: https://lab-flow-theta.vercel.app
-
-처음에는 회원가입 후 가입 확인 메일의 링크를 누르고 로그인합니다. Supabase 테이블과 사용자별 정책, 운영 환경 변수, 가입 확인 메일의 Site URL을 적용했습니다. 실제 DB 트랜잭션에서 본인 프로젝트·프로토콜·일정 저장과 조회, 다른 사용자 데이터 격리, 비로그인 권한 차단을 검증했으며 검증 데이터는 롤백했습니다. 배포된 로그인 화면에서 인증 API 연결 응답도 확인했습니다. 실제 회원가입 메일 수신과 로그인 후 화면에서의 저장 확인은 사용자의 첫 가입 후 진행합니다.
-
-Vercel에서 GitHub 저장소 `suhcab/LabFlow`를 가져옵니다. `vercel.json`이 Vite 프레임워크, `npm run build:vercel` 빌드 명령과 `dist/vercel` 출력 경로를 설정합니다. 기존 Cloudflare 빌드와 별도로 같은 연구 화면을 정적 앱으로 빌드합니다.
-
-Vercel의 Environment Variables에 다음 값을 Production과 Preview 환경에 설정합니다. 환경 변수 변경 후에는 다시 배포해야 브라우저에 반영됩니다.
-
-- `NEXT_PUBLIC_SUPABASE_URL`: Supabase Dashboard의 Project URL
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: 같은 프로젝트의 Publishable key (기존 프로젝트는 `NEXT_PUBLIC_SUPABASE_ANON_KEY`도 지원)
-
-`service_role` 또는 Secret key는 브라우저 환경 변수에 넣지 않습니다. 로컬에서는 같은 값을 `.env.local`에 설정하고 개발 서버를 재시작합니다. SQL Editor에서 `supabase/schema.sql`을 실행한 후 새 프로젝트 저장 및 새로고침 후 조회를 확인합니다.
-
-프로젝트는 로그인한 사용자의 user_id를 기본값으로 저장합니다. 프로젝트·프로토콜·일정의 RLS 정책은 소유자만 조회·수정하도록 제한하며 anon 테이블 권한은 제거합니다. Supabase Authentication의 Site URL은 실제 배포 주소로 설정해야 가입 확인 메일이 올바른 사이트로 연결됩니다.
-
-## 실행
+## 실행과 검증
 
 ```bash
+npm ci
 npm run dev
 ```
 
-배포용 검증은 `npm run build`로 수행합니다.
+Vercel용 검증:
 
+```bash
+npx tsc --noEmit
+npx oxlint app/page.tsx components/auth-gate.tsx components/project-records.tsx lib/project.ts lib/supabase.ts
+npm run build:vercel
+```
+
+`npm run build`는 기존 Cloudflare 빌드입니다. Vercel은 `vercel.json`에 따라 `npm run build:vercel`을 실행하고 `dist/vercel`을 배포합니다.
+
+## Supabase 연결
+
+로컬 `.env.local`과 Vercel Production 환경에 같은 프로젝트의 값을 설정합니다.
+
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
+```
+
+기존 프로젝트의 `NEXT_PUBLIC_SUPABASE_ANON_KEY`도 지원합니다. Secret key나 `service_role` 키는 브라우저 환경 변수에 넣지 않습니다. Vercel 환경 변수 변경 후에는 재배포해야 반영됩니다.
+
+새 DB에서는 SQL Editor에서 `supabase/schema.sql`을 실행합니다. 이 스키마는 프로젝트 소유자 `user_id`와 RLS 정책을 포함하며, 비로그인 사용자의 테이블 접근은 차단합니다. 기존 DB를 변경할 때는 먼저 현재 스키마와 데이터를 확인합니다.
+
+Supabase Authentication의 **Site URL**은 `https://lab-flow-theta.vercel.app`으로 설정합니다. 프로젝트가 일시중지되어 있으면 Dashboard에서 재개한 뒤 로그인과 저장을 확인합니다. 서비스 연결 오류를 해결하기 위해 이메일 확인이나 RLS를 해제하지 않습니다.
+
+## 검증 기록
+
+2026-10-06: DB 트랜잭션에서 본인 프로젝트·프로토콜·일정 저장·조회, 다른 사용자의 기록 차단, 비로그인 권한 차단을 확인했습니다. 검증 데이터는 롤백했습니다.
+
+현재 제출 전 확인 항목과 실제 계정 검증 순서는 [공개 전 점검](docs/pre-public-check.md)에 기록합니다. [3차시 기록](docs/session-3.md)은 로그인 적용 이전의 개발 기록입니다.

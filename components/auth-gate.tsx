@@ -24,12 +24,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (error) setNotice('로그인 상태를 확인하지 못했습니다. 다시 시도해 주세요.');
       setSession(data.session);
       setLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setNotice('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
+      setLoading(false);
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
 
   async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const form = new FormData(event.currentTarget);
     const emailValue = form.get('email');
     const passwordValue = form.get('password');
