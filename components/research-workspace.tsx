@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { ReferenceLibrary } from '@/components/reference-library';
+import { appendCitation, type Reference } from '@/lib/references';
 import { databaseError, type Project } from '@/lib/project';
 import {
   compareDatasets,
@@ -32,6 +34,7 @@ export type ResearchView =
   | 'overview'
   | 'analysis'
   | 'comparison'
+  | 'references'
   | 'reproducibility';
 type Props = {
   project: Project;
@@ -244,6 +247,37 @@ export function ResearchWorkspace({
     markDirty(false);
     setNotice('연구 현황과 설계를 저장했습니다.');
   }
+  async function addReference(ref: Reference) {
+    if (saving || dirty) return;
+    setSaving(true);
+    setNotice('');
+    const next = {
+      ...design,
+      data_source: appendCitation(design.data_source, ref),
+    };
+    try {
+      const result = await supabase
+        .from('research_designs')
+        .upsert({
+          project_id: project.id,
+          design: next,
+          updated_at: new Date().toISOString(),
+        });
+      if (result.error) setNotice(databaseError(result.error));
+      else {
+        setDesign(next);
+        setNotice(
+          '참고문헌을 프로젝트에 저장했습니다. 연구 현황과 보고서에도 포함됩니다.',
+        );
+      }
+    } catch {
+      setNotice(
+        '참고문헌을 저장하지 못했습니다. 연결을 확인하고 다시 시도하세요.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveDataset(dataset: Dataset) {
     setSaving(true);
     setNotice('');
@@ -388,6 +422,7 @@ export function ResearchWorkspace({
               overview: '연구 현황·설계',
               analysis: '데이터·불확도 분석',
               comparison: '실험 간 비교',
+              references: '참고문헌 추천',
               reproducibility: '재현성 점검',
             }[view]
           }
@@ -406,6 +441,22 @@ export function ResearchWorkspace({
         <output className="block rounded-xl border bg-muted p-4 text-sm">
           {notice}
         </output>
+      )}
+      {view === 'references' && (
+        <ReferenceLibrary
+          key={project.id}
+          field={project.field}
+          context={[
+            project.title,
+            project.topic,
+            design.question,
+            design.independent_variable,
+            design.dependent_variable,
+          ].join(' ')}
+          source={design.data_source}
+          saving={saving || dirty}
+          onAdd={addReference}
+        />
       )}
       {view === 'overview' && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

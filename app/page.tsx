@@ -11,6 +11,7 @@ import {
 } from 'react';
 import {
   Atom,
+  BookOpen,
   BarChart3,
   ClipboardCheck,
   GitCompare,
@@ -88,6 +89,7 @@ const projectTabs: { id: View; label: string; icon: typeof FolderKanban }[] = [
   { id: 'analysis', label: '데이터·불확도', icon: BarChart3 },
   { id: 'comparison', label: '실험 비교', icon: GitCompare },
   { id: 'reproducibility', label: '재현성 점검', icon: ClipboardCheck },
+  { id: 'references', label: '참고문헌', icon: BookOpen },
 ];
 
 const fieldStyles: Record<string, string> = {
