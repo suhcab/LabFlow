@@ -257,7 +257,9 @@ export function reviewResearch(
     '필수',
     incomplete.length
       ? `보완할 단계: ${incomplete.map((step) => step.title || '제목 없음').join(', ')}`
-      : `${steps.length}단계의 제목·조건·장비 기록`,
+      : steps.length
+        ? `${steps.length}단계의 제목·조건·장비 기록`
+        : '작성된 단계가 없습니다.',
     '각 단계의 장비 또는 도구와 실행 조건을 채우세요.',
     'protocol',
   );
@@ -344,7 +346,10 @@ export function reviewResearch(
             protocolSignature(protocol),
       )
       .map((dataset) => dataset.name)
-      .join(', ') || '현재 프로토콜과 연결 기록이 일치합니다.',
+      .join(', ') ||
+      (active.length
+        ? '현재 프로토콜과 연결 기록이 일치합니다.'
+        : '연결된 데이터셋이 없습니다.'),
     '변경된 프로토콜과 측정 당시 스냅샷을 비교하세요. 이전 자료의 조건을 임의로 새 조건으로 바꾸지 마세요.',
     'analysis',
   );
