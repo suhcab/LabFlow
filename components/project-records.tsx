@@ -1,6 +1,6 @@
 'use client';
 
-import { SubmitEvent, useEffect, useState } from 'react';
+import { SubmitEvent, useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowDown, ArrowUp, Check, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,10 +28,14 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
   const [revision, setRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
 
+  const markDirty = useCallback((value: boolean) => {
+    setDirty(value);
+    onDirtyChange(value);
+  }, [onDirtyChange]);
+
   useEffect(() => {
-    onDirtyChange(dirty);
     return () => onDirtyChange(false);
-  }, [dirty, onDirtyChange]);
+  }, [onDirtyChange]);
 
   useEffect(() => {
     let active = true;
@@ -53,13 +57,13 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
         else setEvents((result.data ?? []) as ResearchEvent[]);
         setReady(true);
         setNotice('');
-        setDirty(false);
+        markDirty(false);
       }
       setLoading(false);
     }
     void load();
     return () => { active = false; };
-  }, [project.id, view, revision]);
+  }, [project.id, view, revision, markDirty]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -68,20 +72,28 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
-  function changeProtocol(next: Protocol) {
+  function changeProtocol(next: Protocol | ((current: Protocol) => Protocol)) {
     setProtocol(next);
-    setDirty(true);
+    markDirty(true);
     setNotice('');
   }
 
   function updateStep(id: string, field: keyof Omit<Step, 'id'>, value: string) {
-    changeProtocol({ ...protocol, steps: protocol.steps.map((step) => step.id === id ? { ...step, [field]: value } : step) });
+    changeProtocol((current) => ({ ...current, steps: current.steps.map((step) => step.id === id ? { ...step, [field]: value } : step) }));
+  }
+
+  function updateDraft(patch: Partial<EventDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    markDirty(true);
   }
 
   function moveStep(index: number, offset: number) {
-    const steps = [...protocol.steps];
-    [steps[index], steps[index + offset]] = [steps[index + offset], steps[index]];
-    changeProtocol({ ...protocol, steps });
+    changeProtocol((current) => {
+      const steps = [...current.steps];
+      if (index + offset < 0 || index + offset >= steps.length) return current;
+      [steps[index], steps[index + offset]] = [steps[index + offset], steps[index]];
+      return { ...current, steps };
+    });
   }
 
   async function saveProtocol(event: SubmitEvent<HTMLFormElement>) {
@@ -96,7 +108,7 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
       project_id: project.id, ...protocol, updated_at: new Date().toISOString(),
     }, { onConflict: 'project_id' });
     setNotice(error ? databaseError(error) : '프로토콜을 저장했습니다.');
-    if (!error) setDirty(false);
+    if (!error) markDirty(false);
     setSaving(false);
   }
 
@@ -104,6 +116,8 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
     event.preventDefault();
     if (!ready || saving) return;
     if (!draft.title.trim()) { setNotice('일정 제목을 입력해 주세요.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.event_date)) { setNotice('일정 날짜를 선택해 주세요.'); return; }
+    if (draft.event_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.event_time)) { setNotice('일정 시간을 확인해 주세요.'); return; }
     setSaving(true);
     const payload = { ...draft, title: draft.title.trim(), project_id: project.id, updated_at: new Date().toISOString() };
     const query = editingId
@@ -117,7 +131,7 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
       setDraft(newEvent());
       setEditingId(null);
       setFormOpen(false);
-      setDirty(false);
+      markDirty(false);
       setNotice('일정을 저장했습니다.');
     }
     setSaving(false);
@@ -143,7 +157,7 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
 
   function discardDraft() {
     if (dirty && !window.confirm('저장하지 않은 변경을 취소할까요?')) return;
-    setFormOpen(false); setEditingId(null); setDraft(newEvent()); setDirty(false);
+    setFormOpen(false); setEditingId(null); setDraft(newEvent()); markDirty(false);
   }
 
   const today = new Intl.DateTimeFormat('sv-SE').format(new Date());
@@ -160,7 +174,7 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
       {loading ? <output className="block py-12 text-sm text-muted-foreground">기록을 불러오는 중…</output> : !ready ? null : view === 'protocol' ? (
         <form onSubmit={saveProtocol} className="space-y-6 py-6">
           <fieldset disabled={saving} className="space-y-6">
-            <div className="grid gap-2 text-sm font-medium"><label htmlFor="protocol-purpose">실험 목적</label><Textarea id="protocol-purpose" value={protocol.purpose} onChange={(event) => changeProtocol({ ...protocol, purpose: event.target.value })} maxLength={5000} /></div>
+            <div className="grid gap-2 text-sm font-medium"><label htmlFor="protocol-purpose">실험 목적</label><Textarea id="protocol-purpose" value={protocol.purpose} onChange={(event) => { const purpose = event.target.value; changeProtocol((current) => ({ ...current, purpose })); }} maxLength={5000} /></div>
             {protocol.steps.map((step, index) => (
               <section key={step.id} className="border-t pt-5">
                 <div className="mb-4 flex items-center justify-between gap-2">
@@ -168,7 +182,7 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
                   <div className="flex gap-1">
                     <Button type="button" variant="ghost" size="icon" title="단계 위로 이동" aria-label="단계 위로 이동" disabled={index === 0} onClick={() => moveStep(index, -1)}><ArrowUp /></Button>
                     <Button type="button" variant="ghost" size="icon" title="단계 아래로 이동" aria-label="단계 아래로 이동" disabled={index === protocol.steps.length - 1} onClick={() => moveStep(index, 1)}><ArrowDown /></Button>
-                    <Button type="button" variant="ghost" size="icon" title="단계 삭제" aria-label="단계 삭제" onClick={() => { if (window.confirm('이 단계를 삭제할까요?')) changeProtocol({ ...protocol, steps: protocol.steps.filter((entry) => entry.id !== step.id) }); }}><Trash2 /></Button>
+                    <Button type="button" variant="ghost" size="icon" title="단계 삭제" aria-label="단계 삭제" onClick={() => { if (window.confirm('이 단계를 삭제할까요?')) changeProtocol((current) => ({ ...current, steps: current.steps.filter((entry) => entry.id !== step.id) })); }}><Trash2 /></Button>
                   </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -180,7 +194,7 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
                 </div>
               </section>
             ))}
-            <Button type="button" variant="outline" onClick={() => changeProtocol({ ...protocol, steps: [...protocol.steps, newStep()] })}><Plus /> 단계 추가</Button>
+            <Button type="button" variant="outline" onClick={() => changeProtocol((current) => ({ ...current, steps: [...current.steps, newStep()] }))}><Plus /> 단계 추가</Button>
           </fieldset>
           <div className="flex flex-wrap items-center gap-3 border-t pt-5"><Button disabled={saving || !dirty} type="submit"><Save /> {saving ? '저장 중…' : '프로토콜 저장'}</Button><span className="text-xs text-muted-foreground">{dirty ? '저장하지 않은 변경' : '변경 사항 없음'}</span></div>
         </form>
@@ -189,13 +203,13 @@ export function ProjectRecords({ project, view, onBack, onDirtyChange }: { proje
           <p className="mb-5 text-sm text-muted-foreground">예정 {events.filter((item) => !item.completed).length} · 완료 {events.filter((item) => item.completed).length}{project.due_date && ` · 프로젝트 마감 ${project.due_date}`}</p>
           {formOpen && <form onSubmit={saveEvent} className="mb-6 border-y py-5">
             <h2 className="mb-4 text-base font-semibold">{editingId ? '일정 수정' : '새 일정'}</h2>
-            <fieldset disabled={saving} className="grid gap-4 sm:grid-cols-2" onChange={() => setDirty(true)}>
-              <label htmlFor="event-title" className="grid gap-2 text-sm sm:col-span-2">일정 제목<Input id="event-title" required maxLength={120} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-              <label htmlFor="event-date" className="grid gap-2 text-sm">날짜<Input id="event-date" required type="date" value={draft.event_date} onChange={(event) => setDraft({ ...draft, event_date: event.target.value })} /></label>
-              <label htmlFor="event-time" className="grid gap-2 text-sm">시간<Input id="event-time" type="time" value={draft.event_time} onChange={(event) => setDraft({ ...draft, event_time: event.target.value })} /></label>
-              <label className="grid gap-2 text-sm">구분<select className="h-9 rounded-md border bg-background px-3 text-sm" value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value })}>{['실험', '분석', '제출', '기타'].map((kind) => <option key={kind}>{kind}</option>)}</select></label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.completed} onChange={(event) => setDraft({ ...draft, completed: event.target.checked })} />완료</label>
-              <div className="grid gap-2 text-sm sm:col-span-2"><label htmlFor="event-notes">메모</label><Textarea id="event-notes" maxLength={5000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></div>
+            <fieldset disabled={saving} className="grid gap-4 sm:grid-cols-2" >
+              <label htmlFor="event-title" className="grid gap-2 text-sm sm:col-span-2">일정 제목<Input id="event-title" required maxLength={120} value={draft.title} onChange={(event) => { const title = event.target.value; updateDraft({ title }); }} /></label>
+              <label htmlFor="event-date" className="grid gap-2 text-sm">날짜<Input id="event-date" required type="date" onInput={(event) => updateDraft({ event_date: event.currentTarget.value })} value={draft.event_date} onChange={(event) => { const event_date = event.target.value; updateDraft({ event_date }); }} /></label>
+              <label htmlFor="event-time" className="grid gap-2 text-sm">시간<Input id="event-time" type="time" onInput={(event) => updateDraft({ event_time: event.currentTarget.value })} value={draft.event_time} onChange={(event) => { const event_time = event.target.value; updateDraft({ event_time }); }} /></label>
+              <label className="grid gap-2 text-sm">구분<select className="h-9 rounded-md border bg-background px-3 text-sm" value={draft.kind} onChange={(event) => { const kind = event.target.value; updateDraft({ kind }); }}>{['실험', '분석', '제출', '기타'].map((kind) => <option key={kind}>{kind}</option>)}</select></label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.completed} onChange={(event) => { const completed = event.target.checked; updateDraft({ completed }); }} />완료</label>
+              <div className="grid gap-2 text-sm sm:col-span-2"><label htmlFor="event-notes">메모</label><Textarea id="event-notes" maxLength={5000} value={draft.notes} onChange={(event) => { const notes = event.target.value; updateDraft({ notes }); }} /></div>
             </fieldset>
             <div className="mt-4 flex gap-2"><Button disabled={saving} type="submit"><Save /> {saving ? '저장 중…' : '일정 저장'}</Button><Button disabled={saving} type="button" variant="outline" onClick={discardDraft}><X /> 취소</Button></div>
           </form>}
