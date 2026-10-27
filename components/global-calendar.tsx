@@ -57,8 +57,26 @@ export function GlobalCalendar({
   }, [start, end, revision]);
   const visible = useMemo(
     () =>
-      events.filter((event) => filter === 'all' || event.project_id === filter),
-    [events, filter],
+      [
+        ...events,
+        ...projects
+          .filter(
+            (project) =>
+              project.due_date &&
+              project.due_date >= start &&
+              project.due_date < end,
+          )
+          .map((project) => ({
+            id: `deadline-${project.id}`,
+            project_id: project.id,
+            title: `${project.title} 마감`,
+            event_date: project.due_date!,
+            event_time: '',
+            completed: project.status === '완료',
+            kind: '프로젝트 마감',
+          })),
+      ].filter((event) => filter === 'all' || event.project_id === filter),
+    [events, projects, filter, start, end],
   );
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const selectedEvents = visible.filter(

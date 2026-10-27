@@ -1418,7 +1418,11 @@ function DatasetComparison({ datasets }: { datasets: Dataset[] }) {
                 <select
                   className="rounded-md border bg-background p-3"
                   value={item.value}
-                  onChange={(event) => item.set(event.target.value)}
+                  onChange={(event) => {
+                    item.set(event.target.value);
+                    setTolerance('');
+                    setConditionsConfirmed(false);
+                  }}
                 >
                   {datasets.map((dataset) => (
                     <option key={dataset.id} value={dataset.id}>

@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from 'react';
 import {
   Atom,
@@ -64,6 +65,7 @@ import {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -314,7 +316,7 @@ function ResearchHome() {
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton
+                  <SidebarNavButton
                     isActive={view === 'calendar'}
                     tooltip="전체 달력"
                     onClick={() => navigate('calendar')}
@@ -322,10 +324,10 @@ function ResearchHome() {
                   >
                     <CalendarDays />
                     <span>전체 달력</span>
-                  </SidebarMenuButton>
+                  </SidebarNavButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                  <SidebarMenuButton
+                  <SidebarNavButton
                     isActive={view === 'projects'}
                     tooltip="모든 프로젝트"
                     onClick={() => navigate('projects')}
@@ -333,7 +335,7 @@ function ResearchHome() {
                   >
                     <FolderKanban />
                     <span>모든 프로젝트</span>
-                  </SidebarMenuButton>
+                  </SidebarNavButton>
                 </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
@@ -344,7 +346,7 @@ function ResearchHome() {
               <SidebarMenu>
                 {recentProjects.map((project) => (
                   <SidebarMenuItem key={project.id}>
-                    <SidebarMenuButton
+                    <SidebarNavButton
                       isActive={selectedProject?.id === project.id}
                       tooltip={project.title}
                       onClick={() => openProject(project)}
@@ -352,7 +354,7 @@ function ResearchHome() {
                     >
                       <FlaskConical />
                       <span className="truncate">{project.title}</span>
-                    </SidebarMenuButton>
+                    </SidebarNavButton>
                   </SidebarMenuItem>
                 ))}
                 {!loading && !recentProjects.length && (
@@ -367,7 +369,7 @@ function ResearchHome() {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton
+              <SidebarNavButton
                 tooltip="로그아웃"
                 aria-label="로그아웃"
                 onClick={async () => {
@@ -384,7 +386,7 @@ function ResearchHome() {
               >
                 <LogOut />
                 <span>로그아웃</span>
-              </SidebarMenuButton>
+              </SidebarNavButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>
@@ -528,6 +530,19 @@ function ResearchHome() {
     </SidebarProvider>
   );
 }
+function SidebarNavButton(props: ComponentProps<typeof SidebarMenuButton>) {
+  const { setOpenMobile } = useSidebar();
+  return (
+    <SidebarMenuButton
+      {...props}
+      onClick={(event) => {
+        props.onClick?.(event);
+        setOpenMobile(false);
+      }}
+    />
+  );
+}
+
 function NewProjectDialog({
   open,
   onOpenChange,
