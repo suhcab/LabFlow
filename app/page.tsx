@@ -100,7 +100,10 @@ function ResearchHome() {
   const [notice, setNotice] = useState<string | null>(null);
   const [tableMissing, setTableMissing] = useState(false);
   const unsaved = useRef(false);
-  const reportDirty = useCallback((value: boolean) => { unsaved.current = value; }, []);
+  const reportDirty = useCallback((value: boolean) => {
+    unsaved.current = value;
+    if (!value) setNotice(null);
+  }, []);
 
   async function loadProjects() {
     if (!isSupabaseConfigured) {
@@ -109,10 +112,18 @@ function ResearchHome() {
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('updated_at', { ascending: false });
+    const queryProjects = () => supabase.from('projects').select('*').order('updated_at', { ascending: false });
+    let result = await queryProjects();
+    // A sign-in broadcast can arrive before another tab finishes restoring its session.
+    // Retry this read once after auth synchronization; never retry a write this way.
+    if (result.error?.code === '42501') {
+      const { data: auth } = await supabase.auth.getSession();
+      if (auth.session) {
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+        result = await queryProjects();
+      }
+    }
+    const { data, error } = result;
 
     if (error) {
       setTableMissing(error.code === 'PGRST205' || error.code === '42P01');
@@ -262,6 +273,8 @@ function ResearchHome() {
             setDialogOpen(open);
           }} onSubmit={createProject} saving={saving} notice={notice} />
         </header>
+
+        {view !== 'projects' && notice && <output className="mx-5 mt-4 block rounded-xl border bg-muted p-4 text-sm md:mx-9">{notice}</output>}
 
         {view === 'projects' ? (
           <ProjectsView
