@@ -11,11 +11,8 @@ import {
 } from 'react';
 import {
   Atom,
-  BookOpen,
-  ImagePlus,
   BarChart3,
   ClipboardCheck,
-  GitCompare,
   CalendarDays,
   ChevronRight,
   FlaskConical,
@@ -83,15 +80,41 @@ import {
 
 type View = 'projects' | 'calendar' | 'protocol' | 'schedule' | ResearchView;
 
-const projectTabs: { id: View; label: string; icon: typeof FolderKanban }[] = [
-  { id: 'overview', label: '연구 현황', icon: FolderKanban },
-  { id: 'protocol', label: '실험 프로토콜', icon: FlaskConical },
-  { id: 'schedule', label: '일정', icon: CalendarDays },
-  { id: 'analysis', label: '데이터·불확도', icon: BarChart3 },
-  { id: 'comparison', label: '실험 비교', icon: GitCompare },
-  { id: 'reproducibility', label: '재현성 점검', icon: ClipboardCheck },
-  { id: 'references', label: '참고문헌', icon: BookOpen },
-  { id: 'images', label: '사진 분석', icon: ImagePlus },
+const projectGroups: {
+  id: string;
+  label: string;
+  icon: typeof FolderKanban;
+  items: { id: View; label: string }[];
+}[] = [
+  {
+    id: 'manage',
+    label: '연구 관리',
+    icon: FolderKanban,
+    items: [
+      { id: 'overview', label: '연구 현황' },
+      { id: 'protocol', label: '실험 프로토콜' },
+      { id: 'schedule', label: '일정' },
+    ],
+  },
+  {
+    id: 'data',
+    label: '데이터 분석',
+    icon: BarChart3,
+    items: [
+      { id: 'analysis', label: '데이터·불확도' },
+      { id: 'images', label: '사진 분석' },
+      { id: 'comparison', label: '실험 비교' },
+    ],
+  },
+  {
+    id: 'review',
+    label: '검증·문헌',
+    icon: ClipboardCheck,
+    items: [
+      { id: 'reproducibility', label: '재현성 점검' },
+      { id: 'references', label: '참고문헌' },
+    ],
+  },
 ];
 
 const fieldStyles: Record<string, string> = {
@@ -122,6 +145,10 @@ export default function Home() {
 
 function ResearchHome() {
   const [view, setView] = useState<View>('projects');
+  const activeGroup =
+    projectGroups.find((group) =>
+      group.items.some((item) => item.id === view),
+    ) ?? projectGroups[0];
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -456,23 +483,45 @@ function ResearchHome() {
           />
         ) : selectedProject ? (
           <>
-            <nav
-              aria-label="프로젝트 탭"
-              className="flex gap-1 overflow-x-auto border-b bg-card px-4 py-3 md:px-8"
-            >
-              {projectTabs.map(({ id, label, icon: Icon }) => (
-                <Button
-                  key={id}
-                  variant={view === id ? 'secondary' : 'ghost'}
-                  className="shrink-0"
-                  aria-current={view === id ? 'page' : undefined}
-                  onClick={() => navigate(id)}
-                >
-                  <Icon className="size-4" />
-                  {label}
-                </Button>
-              ))}
-            </nav>
+            <div className="border-b bg-card px-4 pt-3 md:px-8">
+              <nav
+                aria-label="프로젝트 주요 메뉴"
+                className="grid max-w-xl grid-cols-3 gap-1 rounded-xl bg-muted/60 p-1"
+              >
+                {projectGroups.map(({ id, label, icon: Icon, items }) => (
+                  <Button
+                    key={id}
+                    variant={activeGroup.id === id ? 'secondary' : 'ghost'}
+                    className={`h-10 min-w-0 gap-1.5 px-2 text-xs sm:text-sm ${activeGroup.id === id ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
+                    aria-current={activeGroup.id === id ? 'true' : undefined}
+                    aria-controls="project-submenu"
+                    onClick={() => {
+                      if (activeGroup.id !== id) navigate(items[0].id);
+                    }}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {label}
+                  </Button>
+                ))}
+              </nav>
+              <nav
+                id="project-submenu"
+                aria-label={`${activeGroup.label} 하위 메뉴`}
+                className="flex flex-wrap gap-x-5 gap-y-1 pt-2"
+              >
+                {activeGroup.items.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-current={view === id ? 'page' : undefined}
+                    className={`border-b-2 px-0.5 py-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${view === id ? 'border-primary font-semibold text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                    onClick={() => navigate(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+            </div>
             {view === 'protocol' || view === 'schedule' ? (
               <ProjectRecords
                 key={`${selectedProject.id}-${view}`}
