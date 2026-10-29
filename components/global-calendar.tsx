@@ -75,7 +75,11 @@ export function GlobalCalendar({
             completed: project.status === '완료',
             kind: '프로젝트 마감',
           })),
-      ].filter((event) => filter === 'all' || event.project_id === filter),
+      ].filter(
+        (event) =>
+          projects.some((project) => project.id === event.project_id) &&
+          (filter === 'all' || event.project_id === filter),
+      ),
     [events, projects, filter, start, end],
   );
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();

@@ -20,6 +20,7 @@ import {
   LogOut,
   Plus,
   Search,
+  Trash2,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -150,6 +151,9 @@ function ResearchHome() {
       group.items.some((item) => item.id === view),
     ) ?? projectGroups[0];
   const [projects, setProjects] = useState<Project[]>([]);
+  const [deletedProjects, setDeletedProjects] = useState<Project[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [changingProject, setChangingProject] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -229,7 +233,22 @@ function ResearchHome() {
       );
       setNotice(databaseError(result.error));
     } else {
-      setProjects((result.data ?? []) as Project[]);
+      const metadata = await supabase
+        .from('research_designs')
+        .select('project_id,deleted_at:design->>project_deleted_at');
+      if (metadata.error) {
+        setNotice(databaseError(metadata.error));
+        setLoading(false);
+        return;
+      }
+      const deleted = new Set(
+        (metadata.data ?? [])
+          .filter((item) => item.deleted_at)
+          .map((item) => item.project_id),
+      );
+      const loaded = (result.data ?? []) as Project[];
+      setProjects(loaded.filter((project) => !deleted.has(project.id)));
+      setDeletedProjects(loaded.filter((project) => deleted.has(project.id)));
       setTableMissing(false);
       setNotice(null);
     }
@@ -254,6 +273,67 @@ function ResearchHome() {
       return;
     }
     applyNavigation(next, project);
+  }
+  function requestDelete(project: Project) {
+    if (unsaved.current) {
+      setNotice(
+        '편집 중인 내용을 먼저 저장하거나 변경 취소한 뒤 삭제해 주세요.',
+      );
+      return;
+    }
+    setDeleteTarget(project);
+  }
+  async function changeProjectDeleted(project: Project, deleted: boolean) {
+    if (changingProject) return;
+    setChangingProject(true);
+    setNotice(null);
+    try {
+      const current = await supabase
+        .from('research_designs')
+        .select('design')
+        .eq('project_id', project.id)
+        .maybeSingle();
+      if (current.error) throw current.error;
+      const design = {
+        ...current.data?.design,
+        project_deleted_at: deleted ? new Date().toISOString() : null,
+      };
+      const saved = await supabase
+        .from('research_designs')
+        .upsert({
+          project_id: project.id,
+          design,
+          updated_at: new Date().toISOString(),
+        });
+      if (saved.error) throw saved.error;
+      if (deleted) {
+        setProjects((items) => items.filter((item) => item.id !== project.id));
+        setDeletedProjects((items) => [
+          project,
+          ...items.filter((item) => item.id !== project.id),
+        ]);
+        if (selectedProject?.id === project.id)
+          applyNavigation('projects', null);
+      } else {
+        setDeletedProjects((items) =>
+          items.filter((item) => item.id !== project.id),
+        );
+        setProjects((items) => [
+          project,
+          ...items.filter((item) => item.id !== project.id),
+        ]);
+      }
+      setDeleteTarget(null);
+      setNotice(
+        deleted
+          ? '프로젝트를 휴지통으로 이동했습니다. 프로젝트 목록 아래 휴지통에서 복원할 수 있습니다.'
+          : '프로젝트와 연결된 기록을 복원했습니다.',
+      );
+    } catch (error) {
+      setNotice(databaseError(error as { message: string; code?: string }));
+    } finally {
+      setChangingProject(false);
+    }
   }
   function openProject(project: Project, next: View = 'overview') {
     navigate(next, project);
@@ -440,6 +520,17 @@ function ResearchHome() {
                 : '프로젝트별 실험·분석·재현성 기록'}
             </p>
           </div>
+          {inProject && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="현재 프로젝트 삭제"
+              onClick={() => requestDelete(selectedProject)}
+              disabled={changingProject}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          )}
           <NewProjectDialog
             open={dialogOpen}
             onOpenChange={(open) => {
@@ -475,6 +566,10 @@ function ResearchHome() {
             onRetry={loadProjects}
             onCreate={() => setDialogOpen(true)}
             onSelect={(project) => openProject(project)}
+            onDelete={requestDelete}
+            deletedProjects={deletedProjects}
+            onRestore={(project) => void changeProjectDeleted(project, false)}
+            changingProject={changingProject}
           />
         ) : view === 'calendar' ? (
           <GlobalCalendar
@@ -550,6 +645,42 @@ function ResearchHome() {
           </div>
         )}
       </SidebarInset>
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !changingProject) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>프로젝트를 삭제할까요?</DialogTitle>
+            <DialogDescription>
+              ‘{deleteTarget?.title}’을 휴지통으로 이동합니다. 전체 달력과 최근
+              프로젝트에서도 숨겨지며, 프로토콜·데이터·사진 분석·참고문헌은
+              보존되어 복원할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {notice && <output className="block text-sm">{notice}</output>}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={changingProject}
+              onClick={() => setDeleteTarget(null)}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={changingProject}
+              onClick={() => {
+                if (deleteTarget) void changeProjectDeleted(deleteTarget, true);
+              }}
+            >
+              {changingProject ? '이동 중…' : '휴지통으로 이동'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={pending !== null}
         onOpenChange={(open) => {
@@ -726,6 +857,10 @@ function ProjectsView({
   onRetry,
   onCreate,
   onSelect,
+  onDelete,
+  deletedProjects,
+  onRestore,
+  changingProject,
 }: {
   projects: Project[];
   allProjects: Project[];
@@ -737,6 +872,10 @@ function ProjectsView({
   onRetry: () => void;
   onCreate: () => void;
   onSelect: (project: Project) => void;
+  onDelete: (project: Project) => void;
+  deletedProjects: Project[];
+  onRestore: (project: Project) => void;
+  changingProject: boolean;
 }) {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-5 py-8 md:px-9 md:py-10">
@@ -800,30 +939,42 @@ function ProjectsView({
           aria-label="연구 프로젝트 목록"
         >
           {projects.map((project) => (
-            <button
-              type="button"
-              key={project.id}
-              onClick={() => onSelect(project)}
-              className="group rounded-2xl border bg-card p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <Badge
-                  className={fieldStyles[project.field] ?? fieldStyles.기타}
-                >
-                  {project.field}
-                </Badge>
-              </div>
-              <h2 className="mt-6 line-clamp-2 text-xl font-bold leading-snug">
-                {project.title}
-              </h2>
-              <p className="mt-2 line-clamp-2 min-h-12 text-sm leading-6 text-muted-foreground">
-                {project.topic || '연구 주제를 입력하지 않았습니다.'}
-              </p>
-              <div className="mt-5 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-                <span>마감 {formatDate(project.due_date)}</span>
-                <ChevronRight className="size-4 transition-transform group-hover:translate-x-1" />
-              </div>
-            </button>
+            <div key={project.id} className="relative">
+              <button
+                type="button"
+                key={project.id}
+                onClick={() => onSelect(project)}
+                className="group h-full w-full rounded-2xl border bg-card p-6 text-left shadow-sm transition-all hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <Badge
+                    className={fieldStyles[project.field] ?? fieldStyles.기타}
+                  >
+                    {project.field}
+                  </Badge>
+                </div>
+                <h2 className="mt-6 line-clamp-2 text-xl font-bold leading-snug">
+                  {project.title}
+                </h2>
+                <p className="mt-2 line-clamp-2 min-h-12 text-sm leading-6 text-muted-foreground">
+                  {project.topic || '연구 주제를 입력하지 않았습니다.'}
+                </p>
+                <div className="mt-5 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+                  <span>마감 {formatDate(project.due_date)}</span>
+                  <ChevronRight className="size-4 transition-transform group-hover:translate-x-1" />
+                </div>
+              </button>
+              <Button
+                className="absolute right-3 top-3"
+                variant="ghost"
+                size="icon"
+                aria-label={`${project.title} 삭제`}
+                disabled={changingProject}
+                onClick={() => onDelete(project)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           ))}
         </section>
       ) : (
@@ -850,6 +1001,30 @@ function ProjectsView({
           )}
         </Empty>
       )}
+      <details className="mt-8 rounded-xl border bg-card p-5">
+        <summary className="cursor-pointer font-medium">
+          휴지통 ({deletedProjects.length})
+        </summary>
+        <p className="my-3 text-sm text-muted-foreground">
+          삭제한 프로젝트는 기록과 함께 보존됩니다. 복원하면 일정과 최근
+          프로젝트에도 다시 표시됩니다.
+        </p>
+        {deletedProjects.map((project) => (
+          <div
+            key={project.id}
+            className="flex items-center justify-between gap-3 border-t py-3"
+          >
+            <span className="min-w-0 break-words text-sm">{project.title}</span>
+            <Button
+              variant="outline"
+              disabled={changingProject}
+              onClick={() => onRestore(project)}
+            >
+              복원
+            </Button>
+          </div>
+        ))}
+      </details>
     </div>
   );
 }
