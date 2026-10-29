@@ -1,4 +1,5 @@
 import type { ImageAnalysisRecord } from './image-analysis';
+import type { ReproductionState } from './reproducibility';
 
 export type ProtocolStep = {
   id: string;
@@ -11,6 +12,7 @@ export type ProtocolStep = {
 export type ProtocolRecord = { purpose: string; steps: ProtocolStep[] };
 export type ResearchDesign = {
   image_analyses?: ImageAnalysisRecord[];
+  reproduction?: ReproductionState;
   research_type: 'experiment' | 'simulation' | 'observational';
   question: string;
   hypothesis: string;

@@ -13,6 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { ReferenceLibrary } from '@/components/reference-library';
 import { ImageWorkspace } from '@/components/image-workspace';
+import { ReproducibilityWorkbench } from '@/components/reproducibility-workbench';
+import type { ReproductionState } from '@/lib/reproducibility';
 import type { ImageAnalysisRecord } from '@/lib/image-analysis';
 import { appendCitation, type Reference } from '@/lib/references';
 import { databaseError, type Project } from '@/lib/project';
@@ -48,7 +50,10 @@ type Props = {
 };
 const today = () => new Intl.DateTimeFormat('sv-SE').format(new Date());
 const designFields: {
-  key: Exclude<keyof ResearchDesign, 'research_type' | 'image_analyses'>;
+  key: Exclude<
+    keyof ResearchDesign,
+    'research_type' | 'image_analyses' | 'reproduction'
+  >;
   label: string;
   hint: string;
 }[] = [
@@ -250,6 +255,36 @@ export function ResearchWorkspace({
     markDirty(false);
     setNotice('연구 현황과 설계를 저장했습니다.');
   }
+  async function saveReproduction(reproduction: ReproductionState) {
+    if (saving) return false;
+    setSaving(true);
+    setNotice('');
+    const next = { ...design, reproduction };
+    try {
+      const result = await supabase
+        .from('research_designs')
+        .upsert({
+          project_id: project.id,
+          design: next,
+          updated_at: new Date().toISOString(),
+        });
+      if (result.error) {
+        setNotice(databaseError(result.error));
+        return false;
+      }
+      setDesign(next);
+      markDirty(false);
+      setNotice('재현성 검토 계획·이력을 저장했습니다.');
+      return true;
+    } catch {
+      setNotice(
+        '재현성 검토를 저장하지 못했습니다. 연결을 확인하고 다시 시도하세요.',
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveImageAnalysis(record: ImageAnalysisRecord) {
     if (saving || (design.image_analyses?.length ?? 0) >= 30) return false;
     setSaving(true);
@@ -423,6 +458,10 @@ export function ResearchWorkspace({
           `### ${record.title}\n파일: ${record.filename}, ${record.width}×${record.height}px\nSHA-256: ${record.sha256}\n영역 A 평균 밝기: ${record.a.mean.brightness}, 기준 이상 면적: ${record.a.abovePercent}%\n${record.b ? `영역 B 평균 밝기: ${record.b.mean.brightness}, 기준 이상 면적: ${record.b.abovePercent}%` : '영역 B 미지정'}\n측정: ${record.measurement ? `${record.measurement.length ?? record.measurement.pixels} ${record.measurement.unit}` : '미기록'}\n조건: ${record.notes}\n계산 방법: ${record.method}\n사진 원본은 별도로 보관해야 합니다. 전체 수치·좌표는 연구 기록 JSON에 포함됩니다.`,
       ),
       '## 기록 기반 재현성 점검',
+      ...(design.reproduction?.runs ?? []).map(
+        (run) =>
+          `검토일: ${run.createdAt} · ${run.result.verdict}\n${run.result.checks.map((check) => `${check.title}: ${check.state} (${check.evidence})`).join('\n')}\n해석 범위: ${run.limits}`,
+      ),
       '이 결과는 기록 누락 점검이며 실제 재실험 성공이나 과학적 타당성을 보장하지 않습니다.',
       ...findings.map(
         (finding) =>
@@ -762,6 +801,15 @@ export function ResearchWorkspace({
       {view === 'comparison' && <DatasetComparison datasets={activeDatasets} />}
       {view === 'reproducibility' && (
         <>
+          <ReproducibilityWorkbench
+            datasets={activeDatasets}
+            findings={findings}
+            saved={design.reproduction ?? { plan: null, runs: [] }}
+            saving={saving}
+            onDirty={markDirty}
+            onSave={saveReproduction}
+            onNavigate={onNavigate}
+          />
           <div className="rounded-xl border bg-primary/5 p-5">
             <p className="text-lg font-semibold">
               기록 준비도{' '}
