@@ -1,4 +1,6 @@
 export type Project = {
+  user_id?: string;
+  revision?: number;
   id: string;
   title: string;
   topic: string;
@@ -12,11 +14,19 @@ export type Project = {
 };
 
 export function databaseError(error: { code?: string; message: string }) {
+  if (/Invitation is invalid|Invalid invitation/.test(error.message))
+    return '유효하지 않은 초대코드입니다. 사용 완료·취소·7일 만료 여부를 확인하고 소유자에게 새 코드를 요청하세요.';
+  if (/Already a project member/.test(error.message))
+    return '이미 참여 중인 프로젝트입니다.';
+  if (/Project is in the trash/.test(error.message))
+    return '휴지통에 있는 프로젝트입니다. 소유자에게 복원을 요청하세요.';
+  if (error.code === '40001' || /LABFLOW_CONFLICT/.test(error.message))
+    return '다른 팀원이 먼저 저장했거나 화면이 오래되었습니다. 입력 내용을 복사해 보관한 뒤 ‘최신 내용 불러오기’ 또는 새로고침으로 다시 확인하세요. 변경 내용은 덮어쓰지 않았습니다.';
   if (error.code === 'PGRST205' || error.code === '42P01') {
     return '필요한 테이블이 없습니다. Supabase SQL Editor에서 supabase/schema.sql을 실행해 주세요.';
   }
   if (error.code === '42501') {
-    return '저장 권한이 없습니다. Supabase의 테이블 권한과 RLS 정책을 확인해 주세요.';
+    return '접근 권한이 없습니다. 소유자에게 팀원 권한을 확인해 주세요.';
   }
   if (/api key|jwt/i.test(error.message)) {
     return 'Supabase 연결 키가 올바르지 않습니다. 프로젝트 주소와 같은 프로젝트의 공개 키를 설정해 주세요.';

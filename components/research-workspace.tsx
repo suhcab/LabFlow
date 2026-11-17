@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { saveVersioned } from '@/lib/collaboration';
 import { ReferenceLibrary } from '@/components/reference-library';
 import { ImageWorkspace } from '@/components/image-workspace';
 import { ReproducibilityWorkbench } from '@/components/reproducibility-workbench';
@@ -118,6 +119,7 @@ export function ResearchWorkspace({
   onNavigate,
 }: Props) {
   const [design, setDesign] = useState<ResearchDesign>({ ...emptyDesign });
+  const [designVersion, setDesignVersion] = useState<number | null>(null);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [protocol, setProtocol] = useState<ProtocolRecord>({
     purpose: '',
@@ -155,7 +157,7 @@ export function ResearchWorkspace({
       const results = await Promise.all([
         supabase
           .from('research_designs')
-          .select('design')
+          .select('design,revision')
           .eq('project_id', project.id)
           .maybeSingle(),
         supabase
@@ -179,6 +181,7 @@ export function ResearchWorkspace({
         );
       else {
         setDesign({ ...emptyDesign, ...results[0].data?.design });
+        setDesignVersion(results[0].data?.revision ?? null);
         setDatasets((results[1].data ?? []) as Dataset[]);
         setProtocol(
           (results[2].data ?? { purpose: '', steps: [] }) as ProtocolRecord,
@@ -220,9 +223,10 @@ export function ResearchWorkspace({
       setSaving(false);
       return;
     }
-    const { data, error } = await supabase
-      .from('projects')
-      .update({
+    const { data, error } = await saveVersioned(
+      'projects',
+      {
+        id: project.id,
         title,
         topic,
         status: text('status'),
@@ -230,21 +234,16 @@ export function ResearchWorkspace({
         start_date: start || null,
         due_date: due || null,
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', project.id)
-      .select()
-      .single();
+      },
+      project.revision ?? 0,
+    );
     if (error) {
       setNotice(databaseError(error));
       setSaving(false);
       return;
     }
     onProjectChange(data as Project);
-    const saved = await supabase.from('research_designs').upsert({
-      project_id: project.id,
-      design,
-      updated_at: new Date().toISOString(),
-    });
+    const saved = await persistDesign(design);
     setSaving(false);
     if (saved.error) {
       setNotice(
@@ -255,19 +254,22 @@ export function ResearchWorkspace({
     markDirty(false);
     setNotice('연구 현황과 설계를 저장했습니다.');
   }
+  async function persistDesign(value: ResearchDesign) {
+    const result = await saveVersioned(
+      'research_designs',
+      { project_id: project.id, design: value },
+      designVersion,
+    );
+    if (!result.error) setDesignVersion(result.data.revision);
+    return result;
+  }
   async function saveReproduction(reproduction: ReproductionState) {
     if (saving) return false;
     setSaving(true);
     setNotice('');
     const next = { ...design, reproduction };
     try {
-      const result = await supabase
-        .from('research_designs')
-        .upsert({
-          project_id: project.id,
-          design: next,
-          updated_at: new Date().toISOString(),
-        });
+      const result = await persistDesign(next);
       if (result.error) {
         setNotice(databaseError(result.error));
         return false;
@@ -294,11 +296,7 @@ export function ResearchWorkspace({
       image_analyses: [record, ...(design.image_analyses ?? [])],
     };
     try {
-      const result = await supabase.from('research_designs').upsert({
-        project_id: project.id,
-        design: next,
-        updated_at: new Date().toISOString(),
-      });
+      const result = await persistDesign(next);
       if (result.error) {
         setNotice(databaseError(result.error));
         return false;
@@ -327,11 +325,7 @@ export function ResearchWorkspace({
       data_source: appendCitation(design.data_source, ref),
     };
     try {
-      const result = await supabase.from('research_designs').upsert({
-        project_id: project.id,
-        design: next,
-        updated_at: new Date().toISOString(),
-      });
+      const result = await persistDesign(next);
       if (result.error) setNotice(databaseError(result.error));
       else {
         setDesign(next);
@@ -350,11 +344,12 @@ export function ResearchWorkspace({
   async function saveDataset(dataset: Dataset) {
     setSaving(true);
     setNotice('');
-    const { data, error } = await supabase
-      .from('research_datasets')
-      .upsert({ ...dataset, updated_at: new Date().toISOString() })
-      .select()
-      .single();
+    const existing = datasets.find((item) => item.id === dataset.id);
+    const { data, error } = await saveVersioned(
+      'research_datasets',
+      { ...dataset },
+      existing?.revision ?? null,
+    );
     setSaving(false);
     if (error) {
       setNotice(databaseError(error));
@@ -378,16 +373,15 @@ export function ResearchWorkspace({
       return;
     }
     setSaving(true);
-    const { data, error } = await supabase
-      .from('research_datasets')
-      .update({
+    const { data, error } = await saveVersioned(
+      'research_datasets',
+      {
+        id: dataset.id,
         archived_at: dataset.archived_at ? null : new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', dataset.id)
-      .eq('project_id', project.id)
-      .select()
-      .single();
+      },
+      dataset.revision ?? 0,
+    );
     setSaving(false);
     if (error) setNotice(databaseError(error));
     else {

@@ -70,6 +70,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { saveVersioned } from '@/lib/collaboration';
+import { ProjectCollaboration } from '@/components/project-collaboration';
 import { databaseError, type Project } from '@/lib/project';
 import { ProjectRecords } from '@/components/project-records';
 import { AuthGate } from '@/components/auth-gate';
@@ -79,7 +81,14 @@ import {
   type ResearchView,
 } from '@/components/research-workspace';
 
-type View = 'projects' | 'calendar' | 'protocol' | 'schedule' | ResearchView;
+type View =
+  | 'projects'
+  | 'calendar'
+  | 'protocol'
+  | 'schedule'
+  | 'team'
+  | 'history'
+  | ResearchView;
 
 const projectGroups: {
   id: string;
@@ -95,6 +104,8 @@ const projectGroups: {
       { id: 'overview', label: '연구 현황' },
       { id: 'protocol', label: '실험 프로토콜' },
       { id: 'schedule', label: '일정' },
+      { id: 'team', label: '팀원·초대' },
+      { id: 'history', label: '수정 이력' },
     ],
   },
   {
@@ -151,6 +162,13 @@ function ResearchHome() {
       group.items.some((item) => item.id === view),
     ) ?? projectGroups[0];
   const [projects, setProjects] = useState<Project[]>([]);
+  const [currentUser, setCurrentUser] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [remoteChange, setRemoteChange] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinNotice, setJoinNotice] = useState('');
   const [deletedProjects, setDeletedProjects] = useState<Project[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [changingProject, setChangingProject] = useState(false);
@@ -202,6 +220,7 @@ function ResearchHome() {
     setLoading(true);
     const { data: auth } = await supabase.auth.getSession();
     if (auth.session) {
+      setCurrentUser(auth.session.user.id);
       recentKey.current = `labflow:recent:${auth.session.user.id}`;
       try {
         const stored: unknown = JSON.parse(
@@ -259,6 +278,7 @@ function ResearchHome() {
     return () => window.clearTimeout(timer);
   }, []);
   function applyNavigation(next: View, project: Project | null) {
+    setRemoteChange(false);
     unsaved.current = false;
     setNotice(null);
     setView(next);
@@ -275,6 +295,10 @@ function ResearchHome() {
     applyNavigation(next, project);
   }
   function requestDelete(project: Project) {
+    if (project.user_id !== currentUser) {
+      setNotice('프로젝트 소유자만 삭제할 수 있습니다.');
+      return;
+    }
     if (unsaved.current) {
       setNotice(
         '편집 중인 내용을 먼저 저장하거나 변경 취소한 뒤 삭제해 주세요.',
@@ -290,7 +314,7 @@ function ResearchHome() {
     try {
       const current = await supabase
         .from('research_designs')
-        .select('design')
+        .select('design,revision')
         .eq('project_id', project.id)
         .maybeSingle();
       if (current.error) throw current.error;
@@ -298,13 +322,15 @@ function ResearchHome() {
         ...current.data?.design,
         project_deleted_at: deleted ? new Date().toISOString() : null,
       };
-      const saved = await supabase
-        .from('research_designs')
-        .upsert({
+      const saved = await saveVersioned(
+        'research_designs',
+        {
           project_id: project.id,
           design,
           updated_at: new Date().toISOString(),
-        });
+        },
+        current.data?.revision ?? null,
+      );
       if (saved.error) throw saved.error;
       if (deleted) {
         setProjects((items) => items.filter((item) => item.id !== project.id));
@@ -337,6 +363,93 @@ function ResearchHome() {
   }
   function openProject(project: Project, next: View = 'overview') {
     navigate(next, project);
+  }
+  async function refreshCurrentProject() {
+    if (unsaved.current) {
+      setNotice(
+        '편집 내용을 저장하거나 취소한 뒤 최신 내용을 불러오세요. 충돌 시 입력 내용을 먼저 복사해 보관하세요.',
+      );
+      return;
+    }
+    const id = selectedProject?.id;
+    if (!id) return;
+    const result = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (result.error) {
+      setNotice(databaseError(result.error));
+      return;
+    }
+    await loadProjects();
+    if (result.data) {
+      setSelectedProject(result.data as Project);
+      setRefreshKey((value) => value + 1);
+      setRemoteChange(false);
+    } else {
+      applyNavigation('projects', null);
+      setNotice('프로젝트 접근 권한이 변경되었습니다.');
+    }
+  }
+  useEffect(() => {
+    if (!selectedProject) return;
+    let active = true;
+    let previous: number | null = null;
+    const check = async () => {
+      const result = await supabase
+        .from('project_history')
+        .select('id,actor_id')
+        .eq('project_id', selectedProject.id)
+        .order('id', { ascending: false })
+        .limit(1);
+      if (!active || result.error) return;
+      const latest = Number(result.data?.[0]?.id ?? 0);
+      if (
+        previous !== null &&
+        latest !== previous &&
+        result.data?.[0]?.actor_id !== currentUser
+      )
+        setRemoteChange(true);
+      previous = latest;
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [selectedProject, currentUser, refreshKey]);
+  async function joinProject() {
+    if (joinBusy) return;
+    setJoinBusy(true);
+    setJoinNotice('');
+    try {
+      const result = await supabase.rpc('accept_project_invitation', {
+        p_token: joinCode.trim(),
+      });
+      if (result.error) {
+        setJoinNotice(databaseError(result.error));
+        return;
+      }
+      await loadProjects();
+      const project = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', result.data)
+        .single();
+      if (project.error) {
+        setJoinNotice(databaseError(project.error));
+        return;
+      }
+      setJoinOpen(false);
+      setJoinCode('');
+      applyNavigation('overview', project.data as Project);
+    } catch {
+      setJoinNotice('참여하지 못했습니다. 초대코드와 연결 상태를 확인하세요.');
+    } finally {
+      setJoinBusy(false);
+    }
   }
   async function createProject(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -520,7 +633,7 @@ function ResearchHome() {
                 : '프로젝트별 실험·분석·재현성 기록'}
             </p>
           </div>
-          {inProject && (
+          {inProject && selectedProject.user_id === currentUser && (
             <Button
               variant="ghost"
               size="icon"
@@ -529,6 +642,17 @@ function ResearchHome() {
               disabled={changingProject}
             >
               <Trash2 className="size-4" />
+            </Button>
+          )}
+          {view === 'projects' && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setJoinNotice('');
+                setJoinOpen(true);
+              }}
+            >
+              팀 참여
             </Button>
           )}
           <NewProjectDialog
@@ -549,6 +673,23 @@ function ResearchHome() {
             notice={notice}
           />
         </header>
+        {inProject && (
+          <div className="mx-5 mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">
+              {selectedProject.user_id === currentUser
+                ? '내 프로젝트'
+                : '공동 편집 프로젝트'}
+              {remoteChange ? ' · 다른 팀원의 변경이 있습니다.' : ''}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refreshCurrentProject()}
+            >
+              최신 내용 불러오기
+            </Button>
+          </div>
+        )}
         {view !== 'projects' && notice && (
           <output className="mx-5 mt-4 block rounded-xl border bg-muted p-4 text-sm">
             {notice}
@@ -570,6 +711,7 @@ function ResearchHome() {
             deletedProjects={deletedProjects}
             onRestore={(project) => void changeProjectDeleted(project, false)}
             changingProject={changingProject}
+            currentUser={currentUser}
           />
         ) : view === 'calendar' ? (
           <GlobalCalendar
@@ -617,9 +759,16 @@ function ResearchHome() {
                 ))}
               </nav>
             </div>
-            {view === 'protocol' || view === 'schedule' ? (
+            {view === 'team' || view === 'history' ? (
+              <ProjectCollaboration
+                key={`${selectedProject.id}-${view}-${refreshKey}`}
+                project={selectedProject}
+                view={view}
+                isOwner={selectedProject.user_id === currentUser}
+              />
+            ) : view === 'protocol' || view === 'schedule' ? (
               <ProjectRecords
-                key={`${selectedProject.id}-${view}`}
+                key={`${selectedProject.id}-${view}-${refreshKey}`}
                 project={selectedProject}
                 view={view}
                 onBack={() => navigate('projects')}
@@ -627,7 +776,7 @@ function ResearchHome() {
               />
             ) : (
               <ResearchWorkspace
-                key={`${selectedProject.id}-${view}`}
+                key={`${selectedProject.id}-${view}-${refreshKey}`}
                 project={selectedProject}
                 view={view as ResearchView}
                 onDirtyChange={reportDirty}
@@ -645,6 +794,59 @@ function ResearchHome() {
           </div>
         )}
       </SidebarInset>
+      <Dialog
+        open={joinOpen}
+        onOpenChange={(open) => {
+          if (!joinBusy) setJoinOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>초대코드로 팀 참여</DialogTitle>
+            <DialogDescription>
+              프로젝트 소유자에게 받은 1회용 코드를 입력하세요. 참여하면 이
+              프로젝트의 연구 기록을 조회하고 공동 편집할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void joinProject();
+            }}
+          >
+            <label htmlFor="join-project-code" className="grid gap-2 text-sm">
+              초대코드
+              <Input
+                id="join-project-code"
+                value={joinCode}
+                maxLength={64}
+                autoComplete="off"
+                required
+                disabled={joinBusy}
+                onChange={(event) => setJoinCode(event.target.value)}
+              />
+            </label>
+            <output className="block text-sm">{joinNotice}</output>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={joinBusy}
+                onClick={() => setJoinOpen(false)}
+              >
+                취소
+              </Button>
+              <Button
+                type="submit"
+                disabled={joinBusy || joinCode.trim().length !== 64}
+              >
+                {joinBusy ? '참여 중…' : '참여하기'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
@@ -861,6 +1063,7 @@ function ProjectsView({
   deletedProjects,
   onRestore,
   changingProject,
+  currentUser,
 }: {
   projects: Project[];
   allProjects: Project[];
@@ -876,6 +1079,7 @@ function ProjectsView({
   deletedProjects: Project[];
   onRestore: (project: Project) => void;
   changingProject: boolean;
+  currentUser: string;
 }) {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-5 py-8 md:px-9 md:py-10">
@@ -964,16 +1168,18 @@ function ProjectsView({
                   <ChevronRight className="size-4 transition-transform group-hover:translate-x-1" />
                 </div>
               </button>
-              <Button
-                className="absolute right-3 top-3"
-                variant="ghost"
-                size="icon"
-                aria-label={`${project.title} 삭제`}
-                disabled={changingProject}
-                onClick={() => onDelete(project)}
-              >
-                <Trash2 className="size-4" />
-              </Button>
+              {project.user_id === currentUser && (
+                <Button
+                  className="absolute right-3 top-3"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${project.title} 삭제`}
+                  disabled={changingProject}
+                  onClick={() => onDelete(project)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
             </div>
           ))}
         </section>
@@ -1015,13 +1221,15 @@ function ProjectsView({
             className="flex items-center justify-between gap-3 border-t py-3"
           >
             <span className="min-w-0 break-words text-sm">{project.title}</span>
-            <Button
-              variant="outline"
-              disabled={changingProject}
-              onClick={() => onRestore(project)}
-            >
-              복원
-            </Button>
+            {project.user_id === currentUser && (
+              <Button
+                variant="outline"
+                disabled={changingProject}
+                onClick={() => onRestore(project)}
+              >
+                복원
+              </Button>
+            )}
           </div>
         ))}
       </details>

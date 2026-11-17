@@ -41,6 +41,7 @@ export const emptyDesign: ResearchDesign = {
   calibration: '',
 };
 export type Dataset = {
+  revision?: number;
   id: string;
   project_id: string;
   name: string;
