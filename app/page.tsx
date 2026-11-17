@@ -76,6 +76,7 @@ import { databaseError, type Project } from '@/lib/project';
 import { ProjectRecords } from '@/components/project-records';
 import { AuthGate } from '@/components/auth-gate';
 import { GlobalCalendar } from '@/components/global-calendar';
+import { ResearchJournal } from '@/components/research-journal';
 import {
   ResearchWorkspace,
   type ResearchView,
@@ -88,6 +89,7 @@ type View =
   | 'schedule'
   | 'team'
   | 'history'
+  | 'journal'
   | ResearchView;
 
 const projectGroups: {
@@ -104,6 +106,7 @@ const projectGroups: {
       { id: 'overview', label: '연구 현황' },
       { id: 'protocol', label: '실험 프로토콜' },
       { id: 'schedule', label: '일정' },
+      { id: 'journal', label: '연구 일지' },
       { id: 'team', label: '팀원·초대' },
       { id: 'history', label: '수정 이력' },
     ],
@@ -759,7 +762,13 @@ function ResearchHome() {
                 ))}
               </nav>
             </div>
-            {view === 'team' || view === 'history' ? (
+            {view === 'journal' ? (
+              <ResearchJournal
+                key={`${selectedProject.id}-${refreshKey}`}
+                project={selectedProject}
+                onDirtyChange={reportDirty}
+              />
+            ) : view === 'team' || view === 'history' ? (
               <ProjectCollaboration
                 key={`${selectedProject.id}-${view}-${refreshKey}`}
                 project={selectedProject}

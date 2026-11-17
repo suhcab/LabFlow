@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { databaseError, type Project } from '@/lib/project';
+import { periodsOnDate, weekPeriods } from '@/lib/calendar-periods';
 
 type CalendarEvent = {
   id: string;
@@ -86,6 +87,10 @@ export function GlobalCalendar({
   const selectedEvents = visible.filter(
     (event) => event.event_date === selected,
   );
+  const filteredProjects = projects.filter(
+    (project) => filter === 'all' || project.id === filter,
+  );
+  const selectedPeriods = periodsOnDate(filteredProjects, selected);
   function changeMonth(offset: number) {
     const next = new Date(month.getFullYear(), month.getMonth() + offset, 1);
     setMonth(next);
@@ -170,43 +175,118 @@ export function GlobalCalendar({
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7">
-          {Array.from({ length: month.getDay() }, (_, index) => (
-            <div
-              key={`blank-${index}`}
-              className="min-h-24 border-b border-r bg-muted/30"
-            />
-          ))}
-          {Array.from({ length: days }, (_, index) => {
-            const date = `${start.slice(0, 8)}${String(index + 1).padStart(2, '0')}`;
-            const dayEvents = visible.filter(
-              (event) => event.event_date === date,
-            );
+        {Array.from(
+          { length: Math.ceil((month.getDay() + days) / 7) },
+          (_, week) => {
+            const dates = Array.from({ length: 7 }, (_, col) => {
+              const day = week * 7 + col - month.getDay() + 1;
+              return day < 1 || day > days
+                ? null
+                : `${start.slice(0, 8)}${String(day).padStart(2, '0')}`;
+            });
+            const periods = weekPeriods(filteredProjects, dates);
             return (
-              <button
-                key={date}
-                aria-label={`${date} 일정 ${dayEvents.length}개`}
-                aria-pressed={selected === date}
-                onClick={() => setSelected(date)}
-                className={`min-h-24 min-w-0 border-b border-r p-2 text-left align-top transition hover:bg-accent ${selected === date ? 'bg-primary/10 ring-2 ring-inset ring-primary' : ''}`}
-              >
-                <span className="text-sm font-medium">{index + 1}</span>
-                {dayEvents.slice(0, 2).map((event) => (
-                  <span
-                    key={event.id}
-                    className={`mt-1 block truncate rounded bg-secondary px-1 text-xs ${event.completed ? 'line-through opacity-60' : ''}`}
+              <div key={week} className="border-b last:border-b-0">
+                <div className="grid grid-cols-7">
+                  {dates.map((date, col) => {
+                    if (!date)
+                      return (
+                        <div
+                          key={`blank-${col}`}
+                          className="min-h-24 border-r bg-muted/30"
+                        />
+                      );
+                    const dayEvents = visible.filter(
+                      (event) => event.event_date === date,
+                    );
+                    const active = periodsOnDate(filteredProjects, date);
+                    return (
+                      <button
+                        key={date}
+                        aria-label={`${date} 일정 ${dayEvents.length}개, 연구 기간 ${active.length}개`}
+                        aria-pressed={selected === date}
+                        onClick={() => setSelected(date)}
+                        className={`min-h-24 min-w-0 border-r p-2 text-left align-top transition hover:bg-accent ${selected === date ? 'bg-primary/10 ring-2 ring-inset ring-primary' : ''}`}
+                      >
+                        <span className="text-sm font-medium">
+                          {Number(date.slice(-2))}
+                        </span>
+                        {dayEvents.slice(0, 2).map((event) => (
+                          <span
+                            key={event.id}
+                            className={`mt-1 block truncate rounded bg-secondary px-1 text-xs ${event.completed ? 'line-through opacity-60' : ''}`}
+                          >
+                            {event.title}
+                          </span>
+                        ))}
+                        {dayEvents.length > 2 && (
+                          <span className="text-xs">
+                            +{dayEvents.length - 2}개
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {periods.length > 0 && (
+                  <div
+                    className="grid grid-cols-7 gap-y-1 bg-muted/20 py-1"
+                    aria-label={`${week + 1}주 연구 기간`}
                   >
-                    {event.title}
-                  </span>
-                ))}
-                {dayEvents.length > 2 && (
-                  <span className="text-xs">+{dayEvents.length - 2}개</span>
+                    {periods.map((segment, index) => (
+                      <button
+                        key={segment.project.id}
+                        style={{
+                          gridColumn: `${segment.first} / ${segment.last + 1}`,
+                          gridRow: index + 1,
+                        }}
+                        className="mx-0.5 min-w-0 truncate rounded bg-primary/15 px-2 py-1 text-left text-xs font-medium text-primary hover:bg-primary/25"
+                        title={`${segment.project.title}: ${segment.project.start_date} ~ ${segment.project.due_date}`}
+                        onClick={() => onOpen(segment.project)}
+                      >
+                        {segment.continuesBefore ? '← ' : ''}
+                        {segment.project.title}
+                        {segment.continuesAfter ? ' →' : ''}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </button>
+              </div>
             );
-          })}
-        </div>
+          },
+        )}
       </div>
+      <p className="text-xs text-muted-foreground">
+        색 막대는 연구 시작일부터 마감일까지의 기간입니다(양 끝 날짜 포함).
+        시작일·마감일을 모두 설정하면 표시됩니다. 막대를 누르면 프로젝트 일정이
+        열립니다.
+      </p>
+      <section className="rounded-xl border bg-card p-5 space-y-3">
+        <h2 className="font-semibold">
+          {selected} 진행 중인 연구 · {selectedPeriods.length}개
+        </h2>
+        {!selectedPeriods.length && (
+          <p className="text-sm text-muted-foreground">
+            설정된 연구 기간이 없습니다.
+          </p>
+        )}
+        {selectedPeriods.map((project) => (
+          <div
+            key={project.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary/5 p-3"
+          >
+            <div>
+              <p className="font-medium">{project.title}</p>
+              <p className="text-sm text-muted-foreground">
+                {project.start_date} ~ {project.due_date}
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => onOpen(project)}>
+              프로젝트 일정 열기
+            </Button>
+          </div>
+        ))}
+      </section>
       <section className="rounded-xl border bg-card p-5">
         <h2 className="font-semibold">{selected} 일정</h2>
         {!loading && !selectedEvents.length && (

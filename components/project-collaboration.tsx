@@ -45,6 +45,7 @@ const fieldLabels: Record<string, string> = {
   'design.question': '연구 질문',
   'design.reproduction': '재현성 검토',
   'design.image_analyses': '사진 분석 기록',
+  'design.journal_entries': '연구 일지',
 };
 const show = (value: unknown) =>
   value === undefined ? '없음' : (JSON.stringify(value, null, 2) ?? '없음');

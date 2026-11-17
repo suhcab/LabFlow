@@ -15,6 +15,7 @@ import { saveVersioned } from '@/lib/collaboration';
 import { ReferenceLibrary } from '@/components/reference-library';
 import { ImageWorkspace } from '@/components/image-workspace';
 import { ReproducibilityWorkbench } from '@/components/reproducibility-workbench';
+import { TermHelp } from '@/components/term-help';
 import type { ReproductionState } from '@/lib/reproducibility';
 import type { ImageAnalysisRecord } from '@/lib/image-analysis';
 import { appendCitation, type Reference } from '@/lib/references';
@@ -1045,8 +1046,13 @@ function DatasetEditor({
             onChange={(event) => patch({ run_date: event.target.value })}
           />
         </label>
-        <label htmlFor="dataset-resolution" className="grid gap-2 text-sm">
-          장비 분해능 d (같은 단위, 미기록은 0)
+        <div className="grid content-start gap-2 text-sm">
+          <div className="flex items-center gap-1">
+            <label htmlFor="dataset-resolution">
+              장비 분해능 d (같은 단위, 미기록은 0)
+            </label>
+            <TermHelp term="장비 분해능 d" />
+          </div>
           <Input
             id="dataset-resolution"
             type="number"
@@ -1061,9 +1067,12 @@ function DatasetEditor({
               patch({ resolution: Number(event.target.value) })
             }
           />
-        </label>
-        <label htmlFor="dataset-factor" className="grid gap-2 text-sm">
-          포함인자 k
+        </div>
+        <div className="grid content-start gap-2 text-sm">
+          <div className="flex items-center gap-1">
+            <label htmlFor="dataset-factor">포함인자 k</label>
+            <TermHelp term="포함인자 k" />
+          </div>
           <Input
             id="dataset-factor"
             type="number"
@@ -1079,7 +1088,7 @@ function DatasetEditor({
               patch({ coverage_factor: Number(event.target.value) })
             }
           />
-        </label>
+        </div>
         <label
           htmlFor="dataset-conditions"
           className="grid gap-2 text-sm sm:col-span-2"
@@ -1230,7 +1239,10 @@ function DatasetEditor({
               ['제외값', String(stats.excluded)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border p-4">
-                <p className="text-xs text-muted-foreground">{label}</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {label}
+                  <TermHelp term={label} />
+                </div>
                 <p className="mt-2 break-words text-lg font-semibold">
                   {value}
                 </p>
